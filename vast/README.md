@@ -4,6 +4,34 @@ Triển khai **LLM + Embedding + Reranker + nginx LB** lên **một instance vas
 dùng **image vLLM dựng sẵn** (`vllm/vllm-openai:latest`) — **không build, không docker-compose,
 không docker-in-docker**.
 
+## ⚡ Nhanh nhất (khuyến nghị): thin image — no-clone, no-apt
+
+Thay vì clone repo lúc boot, dùng **thin image** đã bake sẵn code + `hf_transfer`
+(`justtuananh/secai-serving:vast`, dựng từ [`vast/Dockerfile`](Dockerfile)). Base layer là
+`vllm/vllm-openai:latest` (host vast thường cache sẵn) nên chỉ pull **delta mỏng**.
+
+- **Một lần** — build & push (trên máy có Docker daemon: vast **VM** instance hoặc host bất kỳ):
+  ```bash
+  IMAGE=justtuananh/secai-serving:vast  bash vast/build-push.sh
+  ```
+- **Mỗi lần deploy** — template vast.ai:
+  | Trường | Giá trị |
+  |---|---|
+  | Image | `justtuananh/secai-serving:vast` |
+  | Launch mode | **SSH** |
+  | Env | `API_KEY`, `HF_TOKEN`, `HF_HUB_ENABLE_HF_TRANSFER=1` |
+  | Ports `-p` | `8001:8001 8000:8000 8002:8002` |
+  | On-start Script | `bash /opt/serving/vast/on_start.sh` |
+  | Máy | 2×A100 80GB, **inet cao**, NVMe ≥80GB |
+
+  Boot bỏ hẳn **clone + apt**; chỉ còn tải ~21GB weights từ HF (hf_transfer) → **~4–6 phút**.
+  Weights **không** nằm trong image (tải từ HF — nhanh & free hơn nhồi vào registry).
+
+> Cần nhanh hơn nữa (deploy lặp nhiều lần): gắn **vast persistent volume** tại
+> `/workspace/hf-cache` đã pre-tải weights → boot còn ~2–3 phút.
+
+Phần dưới là **cách clone-based** (dùng base image trần) — vẫn chạy, tiện cho dev/debug.
+
 ## Vì sao không dùng `docker compose` trên vast.ai?
 
 vast.ai instance **bản thân đã là một Docker container** ([docs](https://docs.vast.ai/documentation/instances/templates/docker-environment)).

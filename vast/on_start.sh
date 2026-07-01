@@ -87,11 +87,30 @@ if [ -z "$API_KEY" ]; then
 fi
 [ -n "$HF_TOKEN" ] && export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" HF_TOKEN="$HF_TOKEN"
 
-# ── 1) System deps (nginx for LB, envsubst, git, curl) ───────────────────────
-echo "── installing nginx + git + gettext-base + curl ──"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq nginx git gettext-base curl >/dev/null
+# ── 0) Accelerated HF downloads (hf_transfer) — the 21GB weights are the only real
+# bottleneck. Baked + enabled in the thin vast image; also self-heals on the bare
+# base image. If enabled but the package is missing, huggingface_hub ERRORS on every
+# download — so we disable the flag when hf_transfer can't be imported/installed.
+export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+if [ "$HF_HUB_ENABLE_HF_TRANSFER" = "1" ]; then
+  if python3 -c "import hf_transfer" 2>/dev/null; then
+    echo "── hf_transfer present → accelerated HF downloads ──"
+  elif pip install -q hf_transfer 2>/dev/null; then
+    echo "── hf_transfer installed → accelerated HF downloads ──"
+  else
+    echo "── hf_transfer unavailable → falling back to plain HF downloads ──"; export HF_HUB_ENABLE_HF_TRANSFER=0
+  fi
+fi
+
+# ── 1) System deps (nginx for LB, envsubst, git, curl) — skip if baked in image ──
+if command -v nginx >/dev/null 2>&1 && command -v envsubst >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  echo "── nginx + envsubst + curl already present (baked image) → skip apt ──"
+else
+  echo "── installing nginx + git + gettext-base + curl ──"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq nginx git gettext-base curl >/dev/null
+fi
 # vLLM image already provides python3 + vllm; don't reinstall.
 
 # ── 2) Locate repo files (reranker jinja). Clone only if not already present. ──
