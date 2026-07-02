@@ -2,7 +2,7 @@
 
 > Dự án này CHỈ lo hạ tầng model: **LLM + embedding + reranker** (6 replica vLLM + nginx LB)
 > trên máy 2×A100 thuê ở vast.ai. Kết quả là **3 URL** — dán vào script `deploy.sh` của
-> bundle app (`/opt/secai-customer-2026-06-23-A100/`). App KHÔNG nằm ở đây.
+> bundle app (`/opt/nghiem_thu/secai-customer-2026-06-23-A100/`). App KHÔNG nằm ở đây.
 >
 > Code instance boot = tag **`v1.0`** (commit `ccb6ca9`) của fork
 > `justtuananh/infra_serving_quick_start` — bất biến; đổi code → tạo tag mới + sửa `TAG=`

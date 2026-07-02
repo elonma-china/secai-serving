@@ -44,14 +44,14 @@ LLM_MODEL="${LLM_MODEL:-cpatonn/Qwen3-30B-A3B-Instruct-2507-AWQ-4bit}"
 EMBED_MODEL="${EMBED_MODEL:-BAAI/bge-m3}"
 RERANK_MODEL="${RERANK_MODEL:-Qwen/Qwen3-Reranker-0.6B}"
 
-LLM_MAX_MODEL_LEN="${LLM_MAX_MODEL_LEN:-32768}"
+LLM_MAX_MODEL_LEN="${LLM_MAX_MODEL_LEN:-40960}"
 # Quantization: leave EMPTY to let vLLM auto-detect from the model's own config.
 # IMPORTANT: the default model (cpatonn/...-AWQ-4bit) is packed as `compressed-tensors`,
 # NOT classic AWQ — forcing `--quantization awq_marlin` raises a config-mismatch error.
 # Auto-detect handles both compressed-tensors and classic-AWQ builds (on Ampere both
 # dispatch to Marlin int4 kernels). Override only if you KNOW the build's format.
 LLM_QUANTIZATION="${LLM_QUANTIZATION:-}"
-LLM_GPU_UTIL="${LLM_GPU_UTIL:-0.80}"
+LLM_GPU_UTIL="${LLM_GPU_UTIL:-0.85}"
 EMBED_GPU_UTIL="${EMBED_GPU_UTIL:-0.05}"
 RERANK_GPU_UTIL="${RERANK_GPU_UTIL:-0.06}"
 

@@ -4,7 +4,7 @@
 #  (LLM + embedding + reranker: 6 replica vLLM + nginx LB). Kết quả = 3 URL.
 #
 #  Dự án này CHỈ lo serving. App secai nhận 3 URL đó qua:
-#     cd /opt/secai-customer-2026-06-23-A100 && ./deploy.sh --llm <URL>/v1 --embed <URL> --rerank <URL>
+#     cd /opt/nghiem_thu/secai-customer-2026-06-23-A100 && ./deploy.sh --llm <URL>/v1 --embed <URL> --rerank <URL>
 #
 #  Code chạy trên instance pin tại tag **v1.0** (= commit ccb6ca9) của fork
 #  justtuananh/infra_serving_quick_start — bất biến, push nhánh sau này không ảnh hưởng.
@@ -35,11 +35,11 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"; cd "$ROOT"
 . "$ROOT/lib.sh"
 
 LABEL="secai-serving"
-TAG="v1.0"
+TAG="v1.1"
 REPO_FORK="https://github.com/justtuananh/infra_serving_quick_start.git"
 THIN_IMAGE="justtuananh/secai-serving:vast"
 BASE_IMAGE="vllm/vllm-openai:latest"
-BUNDLE_DIR="/opt/secai-customer-2026-06-23-A100"
+BUNDLE_DIR="/opt/nghiem_thu/secai-customer-2026-06-23-A100"
 
 # ── args ──────────────────────────────────────────────────────────────────────
 OFFER=""; YES=0; MAX_PRICE="2.5"; DISK=100; API_KEY="sk-secai2026"; HF_TOKEN=""
@@ -104,7 +104,7 @@ fi
 say "offer chọn: $OFFER"
 
 # ── build lệnh create ─────────────────────────────────────────────────────────
-ENVSTR="-p 8001:8001 -p 8000:8000 -p 8002:8002 -e API_KEY=$API_KEY -e HF_HUB_ENABLE_HF_TRANSFER=1"
+ENVSTR="-p 8001:8001 -p 8000:8000 -p 8002:8002 -e API_KEY=$API_KEY -e HF_HUB_ENABLE_HF_TRANSFER=1 -e LLM_MAX_MODEL_LEN=40960 -e LLM_GPU_UTIL=0.85"
 [ -n "$HF_TOKEN" ] && ENVSTR="$ENVSTR -e HF_TOKEN=$HF_TOKEN"
 if [ "$THIN" = "1" ]; then
   IMAGE="$THIN_IMAGE"; ONSTART="bash /opt/serving/vast/on_start.sh"
