@@ -40,7 +40,7 @@ fi
 
 RC=0
 for id in "${IDS[@]}"; do
-  if "$VASTAI" "$ACTION" instance "$id" >/dev/null 2>&1; then ok "$ACTION $id xong"
+  if "$VASTAI" "$ACTION" instance "$id" $([ "$ACTION" = destroy ] && echo -y) >/dev/null 2>&1; then ok "$ACTION $id xong"
   else warn "$ACTION $id THẤT BẠI — thử tay: $VASTAI $ACTION instance $id"; RC=1; fi
 done
 exit $RC

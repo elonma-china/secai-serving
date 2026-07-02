@@ -35,7 +35,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"; cd "$ROOT"
 . "$ROOT/lib.sh"
 
 LABEL="secai-serving"
-TAG="v1.1"
+TAG="v1.0"
 REPO_FORK="https://github.com/justtuananh/infra_serving_quick_start.git"
 THIN_IMAGE="justtuananh/secai-serving:vast"
 BASE_IMAGE="vllm/vllm-openai:latest"
@@ -104,7 +104,7 @@ fi
 say "offer chọn: $OFFER"
 
 # ── build lệnh create ─────────────────────────────────────────────────────────
-ENVSTR="-p 8001:8001 -p 8000:8000 -p 8002:8002 -e API_KEY=$API_KEY -e HF_HUB_ENABLE_HF_TRANSFER=1 -e LLM_MAX_MODEL_LEN=40960 -e LLM_GPU_UTIL=0.85"
+ENVSTR="-p 8001:8001 -p 8000:8000 -p 8002:8002 -e API_KEY=$API_KEY -e HF_HUB_ENABLE_HF_TRANSFER=1 -e LLM_MAX_MODEL_LEN=40960 -e LLM_GPU_UTIL=0.80"
 [ -n "$HF_TOKEN" ] && ENVSTR="$ENVSTR -e HF_TOKEN=$HF_TOKEN"
 if [ "$THIN" = "1" ]; then
   IMAGE="$THIN_IMAGE"; ONSTART="bash /opt/serving/vast/on_start.sh"
@@ -156,7 +156,7 @@ if [ "$REPLACE" = "1" ] && [ -n "${OLD_IDS// /}" ]; then
   for oid in $OLD_IDS; do
     [ "$oid" = "$IID" ] && continue
     say "destroy instance cũ $oid (--replace)"
-    "$VASTAI" destroy instance "$oid" >/dev/null 2>&1 \
+    "$VASTAI" destroy instance "$oid" -y >/dev/null 2>&1 \
       && ok "đã destroy $oid" || warn "destroy $oid thất bại — tự xử lý: ./serving-down.sh $oid"
   done
 fi

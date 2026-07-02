@@ -51,7 +51,7 @@ LLM_MAX_MODEL_LEN="${LLM_MAX_MODEL_LEN:-40960}"
 # Auto-detect handles both compressed-tensors and classic-AWQ builds (on Ampere both
 # dispatch to Marlin int4 kernels). Override only if you KNOW the build's format.
 LLM_QUANTIZATION="${LLM_QUANTIZATION:-}"
-LLM_GPU_UTIL="${LLM_GPU_UTIL:-0.85}"
+LLM_GPU_UTIL="${LLM_GPU_UTIL:-0.80}"
 EMBED_GPU_UTIL="${EMBED_GPU_UTIL:-0.05}"
 RERANK_GPU_UTIL="${RERANK_GPU_UTIL:-0.06}"
 
