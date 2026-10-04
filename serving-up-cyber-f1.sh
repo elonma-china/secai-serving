@@ -39,6 +39,7 @@ BASE_IMAGE="vllm/vllm-openai:v0.25.1"
 LLM_MODEL="DuyTa/Cyber-F1-AWQ"
 ONSTART_SRC="$ROOT/vast/on_start_cyber_f1.sh"
 JINJA_SRC="$ROOT/templates/qwen3_reranker.jinja"
+RESIDENT_SMOKE_SRC="$ROOT/vast/resident_smoke.py"
 
 OFFER=""; YES=0; MAX_PRICE="2.5"; DISK=100; API_KEY="${API_KEY:-sk-secai2026}"; GPUS=2
 MAX_LEN=65536; GPU_UTIL="0.78"; GPU_UTIL_EXPLICIT=0; TIMEOUT=2400; DRY=0; REPLACE_OLD=0
@@ -70,6 +71,9 @@ while [ $# -gt 0 ]; do case "$1" in
   -h|--help)      sed -n '2,32p' "$0"; echo 'Specialists default ON: --disable-specialists, --disable-ocr, --disable-mt, --specialist-gpu 0, --specialist-root /workspace/secai-specialist-services, --ssh-identity FILE'; exit 0;;
   *) die "tham số lạ: $1" "xem ./serving-up-cyber-f1.sh --help";;
 esac; done
+[[ "$GPUS" =~ ^[1-4]$ ]] || die '--gpus phải là số từ1 đến4' 'hỗ trợ A100 80GB với1/2/4 GPU (3 cũng hợp lệ)'
+[[ "$SPECIALIST_GPU" =~ ^[0-3]$ ]] && [ "$SPECIALIST_GPU" -lt "$GPUS" ] \
+  || die '--specialist-gpu phải là chỉ số GPU trong [0,gpus-1]' 'chọn lại GPU phụ trước khi thuê'
 [ "$SPECIALISTS" = 1 ] || [ "$GPU_UTIL_EXPLICIT" = 1 ] || GPU_UTIL=0.80
 
 say "══ Preflight ══"
@@ -85,6 +89,7 @@ fi
   || die 'thiếu ssh/scp để chuyển runtime specialists' 'cài openssh-client'
 [ -f "$ONSTART_SRC" ] || die "thiếu $ONSTART_SRC" "kiểm tra repo"
 [ -f "$JINJA_SRC" ]   || die "thiếu $JINJA_SRC"   "kiểm tra repo"
+[ -f "$RESIDENT_SMOKE_SRC" ] || die "thiếu $RESIDENT_SMOKE_SRC" 'kiểm tra repo'
 ok "LLM=$LLM_MODEL · embed=$EMBED_MODEL · rerank=$RERANK_MODEL · len=$MAX_LEN · util=$GPU_UTIL · key=<redacted> · trần \$$MAX_PRICE/h · disk ${DISK}GB"
 
 OLD_SAME=""
@@ -125,11 +130,13 @@ say "offer chọn: $OFFER"
 # (~18KB) vượt limit → gzip (~7KB) rồi mới base64. Instance giải nén: base64 -d | gunzip.
 ONSTART_B64="$(gzip -9 -c "$ONSTART_SRC" | base64 -w0)"
 JINJA_B64="$(gzip -9 -c "$JINJA_SRC" | base64 -w0)"
+SMOKE_B64="$(gzip -9 -c "$RESIDENT_SMOKE_SRC" | base64 -w0)"
 read -r -d '' ONSTART <<ONSTART_EOF || true
 set -e
 mkdir -p /opt/secai/vast /opt/secai/templates
 echo $ONSTART_B64 | base64 -d | gunzip > /opt/secai/vast/on_start_cyber_f1.sh
 echo $JINJA_B64 | base64 -d | gunzip > /opt/secai/templates/qwen3_reranker.jinja
+echo $SMOKE_B64 | base64 -d | gunzip > /opt/secai/vast/resident_smoke.py
 chmod +x /opt/secai/vast/on_start_cyber_f1.sh
 bash /opt/secai/vast/on_start_cyber_f1.sh
 ONSTART_EOF
@@ -137,7 +144,7 @@ ONSTART_EOF
 ENVSTR="-p 8001:8001 -p 8000:8000 -p 8002:8002 -e API_KEY=$API_KEY -e HF_HUB_ENABLE_HF_TRANSFER=1"
 ENVSTR="$ENVSTR -e LLM_MODEL=$LLM_MODEL -e LLM_MAX_MODEL_LEN=$MAX_LEN -e LLM_GPU_UTIL=$GPU_UTIL"
 ENVSTR="$ENVSTR -e EMBED_MODEL=$EMBED_MODEL -e RERANK_MODEL=$RERANK_MODEL"
-ENVSTR="$ENVSTR -e SECAI_SPECIALIST_ROOT=$SPECIALIST_ROOT -e SECAI_SPECIALISTS_ENABLED=$SPECIALISTS"
+ENVSTR="$ENVSTR -e SECAI_SPECIALIST_ROOT=$SPECIALIST_ROOT -e SECAI_SPECIALISTS_ENABLED=$SPECIALISTS -e NUM_GPUS=$GPUS"
 [ "${#ONSTART}" -le 16384 ] || die 'onstart vượt giới hạn16384 byte' 'giảm nội dung nhúng'
 
 if [ "$DRY" = "1" ]; then
@@ -178,6 +185,10 @@ esac
 wait_serving "$IID" "$API_KEY" "$TIMEOUT" \
   || die "serving chưa sẵn sàng sau ${TIMEOUT}s ($VASTAI logs $IID)" \
          "instance $IID vẫn TÍNH TIỀN; xem log (tải ~24GB chậm / arch mới), probe lại: ./serving-status.sh; bỏ: ./serving-down.sh $IID"
+API_KEY="$API_KEY" python3 "$RESIDENT_SMOKE_SRC" --llm-url "http://$IP:$P_LLM" \
+  --embed-url "http://$IP:$P_EMB" --rerank-url "http://$IP:$P_RR" \
+  --llm-model "$LLM_MODEL" --embed-model "$EMBED_MODEL" --rerank-model "$RERANK_MODEL" \
+  || die 'resident inference smoke thất bại' "instance $IID vẫn chạy; xem log trước khi tiếp tục"
 
 if [ "$SPECIALISTS" = 1 ]; then
   # SSH delivery also works when the serving GitHub repository is private.

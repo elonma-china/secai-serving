@@ -122,6 +122,27 @@ class SpecialistsTests(unittest.TestCase):
                 mocked.assert_not_called()
                 self.assertFalse((root / "venv").exists())
 
+    def test_disposable_ocr_interpreter_inherits_accounting_helper_import(self):
+        worker_spec = importlib.util.spec_from_file_location("specialist_worker", HELPERS / "worker.py")
+        worker = importlib.util.module_from_spec(worker_spec)
+        worker_spec.loader.exec_module(worker)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            helper = root / "source/deploy/ocr/server.py"
+            helper.parent.mkdir(parents=True)
+            helper.write_text("ACCOUNTING_HELPER='selected-private-ocr-helper'\n")
+            child = root / "source/evals/translation_ocr/real_quality/child.py"
+            child.parent.mkdir(parents=True)
+            child.write_text("import server\nprint(server.ACCOUNTING_HELPER)\nprint(server.__file__)\n")
+            (root / "config.json").write_text(json.dumps({"environment": {}}))
+            # Execute the same fresh-interpreter boundary as the OCR supervisor.
+            with patch.dict(os.environ, {"PYTHONPATH": ""}), patch.object(sys, "path", list(sys.path)):
+                worker.configure(root)
+                result = subprocess.run([sys.executable, str(child)], env=dict(os.environ),
+                                        cwd=child.parent, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ["selected-private-ocr-helper", str(helper)])
+
     def test_ready_checks_auth_routes_then_serial_inference(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -1,5 +1,15 @@
 # Năm model trên Vast
 
+Hỗ trợ1,2 hoặc4 GPU **A100 80GB** (PCIe/SXM4); `--gpus` cho phép1..4 và phải trùng số GPU thực tế. Mỗi GPU có một replica riêng của Cyber-F1, embedding và reranker; nginx cân tải resident. OCR/MT dùng một GPU chọn bởi `--specialist-gpu` (index0..gpus-1), cùng admission lock và child on-demand. Bật đủ năm model không yêu cầu hai auxiliary resident trên mỗi GPU.
+
+| Số GPU | Resident replicas (LLM/embed/rerank) | Auxiliary GPU mặc định | Năm model |
+|---|---|---|---|
+|1 × A100 80GB|1/1/1|0|Có, OCR/MT chạy lần lượt|
+|2 × A100 80GB|2/2/2|0 (có thể chọn1)|Có|
+|4 × A100 80GB|4/4/4|0 (có thể chọn0..3)|Có|
+
+GPU khác hay A10040GB không nằm trong cấu hình hỗ trợ này. Startup kiểm số GPU trước khi launch; CLI từ chối số/chỉ số GPU sai trước mọi API/Vast call. Mỗi replica được probe inference thật sau khi healthy: chat completions, embeddings và `/rerank`, với model name và Bearer auth tương ứng; host cũng probe ba route qua nginx trước khi cài auxiliary và báo hoàn tất. OCR/MT smoke chạy sau cùng. Kiểm thử1/2/4 dùng process/CLI giả lập, chưa phải kết quả benchmark trên ba loại instance.
+
 `serving-up-cyber-f1.sh` dựng Cyber-F1, **DuyTa/sec-embedding**, **DuyTa/sec-rerank** resident và hai API riêng trên loopback: MT `127.0.0.1:18868`, OCR `127.0.0.1:18083`. API phụ chỉ tải model trong child của request; hai API dùng cùng `/workspace/secai-gpu-specialists/admission.lock`. Không có hai model phụ resident đồng thời. Gateway kết nối qua SSH tunnel với hai token riêng; không publish hai cổng này bằng Vast.
 
 ```sh
@@ -67,3 +77,9 @@ python3 -m unittest discover -s tests -v
 bash -n serving-up-cyber-f1.sh serving-specialists-install.sh vast/on_start_cyber_f1.sh
 git diff --check
 ```
+
+## Kiểm chứng ngày2026-10-04
+
+20 unittest pass, shell syntax/compile/diff checks pass. Dry-run và startup mô phỏng xác nhận matrix1/2/4 GPU: đúng số replica LLM/embedding/rerank, đủ upstream nginx, probe từngGPU và chọnGPU phụ hợp lệ. Onstart10100byte, dưới giới hạn16384.
+
+Instance A10080GB hiện có (1GPU): resident_smoke.py thực thi chat/embedding/rerank200; MT và OCR synthetic inference200 có nội dung; GPU trở lại72278MiB used/8772MiB free với ba resident. Thử dừng MTworker lúc idle: supervisor tựrestart, OCRworker và ba resident giữ nguyên. Hookboot đã thêm sau residentstartup; không reboot máy đang phục vụ chung. 2/4GPU chưa được kiểm trên instance thuê mới; không thuê hoặc destroy trong lần này.

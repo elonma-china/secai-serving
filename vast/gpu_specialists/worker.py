@@ -10,9 +10,14 @@ def configure(root):
     root = Path(root)
     config = json.loads((root / "config.json").read_text())
     source = root / "source"
-    sys.path[:0] = [str(source), str(source / "deploy/ocr"),
+    import_paths = [str(source), str(source / "deploy/ocr"),
                     str(source / "evals/translation_ocr/real_quality")]
+    sys.path[:0] = import_paths
     os.environ.update(config["environment"])
+    # The accepted OCR supervisor executes a fresh Python interpreter for each
+    # request. sys.path edits alone do not reach that disposable child.
+    os.environ["PYTHONPATH"] = os.pathsep.join(import_paths +
+        ([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else []))
     os.environ["PATH"] = str(root / "bin") + ":" + os.environ["PATH"]
     return config
 
