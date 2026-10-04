@@ -156,3 +156,7 @@ vast/
   .env.example         ← mọi env var + default
   README.md            ← file này
 ```
+
+## OCR/MT on-demand trong flow Cyber-F1
+
+`serving-up-cyber-f1.sh` mặc định thêm OCR `Qwen/Qwen3-VL-2B-Instruct` và MT `tencent/Hy-MT2-7B` Q4_K_M, dùng chung GPU admission lock. Embed/rerank mặc định là model fine-tuned `DuyTa/sec-embedding` và `DuyTa/sec-rerank`. Xem [bootstrap, cấu hình và migration instance hiện có](gpu_specialists/README.md). Hai cổng phụ chỉ bind loopback; bundle độc lập được chuyển qua SSH/SCP. `--disable-specialists` giữ flow ba dịch vụ. `--dry-run` chạy offline và không thuê/destroy instance.

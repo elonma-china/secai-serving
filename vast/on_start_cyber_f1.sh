@@ -41,8 +41,8 @@ API_KEY="${API_KEY:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 
 LLM_MODEL="${LLM_MODEL:-DuyTa/Cyber-F1-AWQ}"
-EMBED_MODEL="${EMBED_MODEL:-BAAI/bge-m3}"
-RERANK_MODEL="${RERANK_MODEL:-Qwen/Qwen3-Reranker-0.6B}"
+EMBED_MODEL="${EMBED_MODEL:-DuyTa/sec-embedding}"
+RERANK_MODEL="${RERANK_MODEL:-DuyTa/sec-rerank}"
 
 LLM_MAX_MODEL_LEN="${LLM_MAX_MODEL_LEN:-65536}"
 # Quantization: leave EMPTY to let vLLM auto-detect from the model's own config.
@@ -257,5 +257,13 @@ echo "✅ stack up — ${NUM_GPUS} replica(s) per service, nginx LB:"
 echo "   LLM       :${LLM_PUB_PORT}   (${LLM_MODEL})"
 echo "   Embedding :${EMBED_PUB_PORT}   (${EMBED_MODEL})"
 echo "   Reranker  :${RERANK_PUB_PORT}   (${RERANK_MODEL})"
+
+# The host installer transfers the pinned standalone bundle after first boot.
+# Subsequent Vast container boots restart both CPU supervisors after residents
+# are healthy, recapturing their new GPU host PIDs under the shared flock.
+SPECIALIST_ROOT="${SECAI_SPECIALIST_ROOT:-/workspace/secai-specialist-services}"
+if [ "${SECAI_SPECIALISTS_ENABLED:-1}" = 1 ] && [ -f "$SPECIALIST_ROOT/config.json" ]; then
+  python3 "$SPECIALIST_ROOT/bootstrap.py" boot --root "$SPECIALIST_ROOT"
+fi
 echo "   Map these ports in the vast.ai template (-p) and read PUBLIC_IP:PORT from 'IP Port Info'."
 echo "═══ on_start done @ $(date -u '+%Y-%m-%dT%H:%M:%SZ') ═══"

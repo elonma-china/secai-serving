@@ -1,0 +1,31 @@
+{
+  "gateway_revision": "0650f9d7d0b40f9eefb94f3059e1516d842ac112",
+  "files": {
+    "deploy/gpu_stage/__init__.py": "0d49c728aebd4fa2f3711f19f5f71fdf8972ae0099b7fd489d635ffbb4840710",
+    "deploy/gpu_stage/coordinator.py": "3f5f4164112dc5dc7fa699241572daf8f6e4e2bfff6ab3383a60d0995c4ce71c",
+    "deploy/gpu_stage/owner.py": "b804c8a81c4ab629c70b283567b672b43784d085913c4575c98ea23e0ed546c1",
+    "deploy/gpu_stage/mt_diagnostic.py": "7bbe9a84fcccf477818de8bf356fff13014026a30edf74ab3c4773d89002a33b",
+    "deploy/gpu_stage/mt_on_demand.py": "cf06c2775f94513d4ac84a7bfbb37f687dff71a23ece13de6ac2f7e6cb6a0d9f",
+    "deploy/mt_cpu_service/service.py": "b8a36d7cf2639f429619eaeac78e8d76cb25f4d7eeb28a2ac7dace3dfa6916a9",
+    "deploy/mt_cpu_service/child_supervisor.py": "3e47de0eb539388d31d185f28ad76ebd66f51fbb8903f290f3c2759b2d379962",
+    "evals/multilang/gpu_specialist_server.py": "5d707e0d3f0e60889a0d209cd9d1db30c4e8daaf9f03e6b763d43702776ce19a",
+    "evals/translation_ocr/real_quality/qwen_ocr_supervisor.py": "e0d919b459dd117367f09ab2511ca5be0c2e30af9a69d58dd0a18bca6dd65813",
+    "evals/translation_ocr/real_quality/qwen_ocr_child.py": "a5f60b38383de43c7111c67778042269213b4f1804a52f1f9ff11dded1a344b5",
+    "evals/translation_ocr/real_quality/qwen_server_real_pages_bounded.py": "9308887a3939f08d000b833fa92190b1f826e0b273a86b7a89271ed88098d1aa",
+    "deploy/ocr/server.py": "d8edaaf7a9dae4d784b9cef1d361bb855216922dcd0dbb3622f62cdfb8289543"
+  },
+  "bundle_sha256": "06969ec9969918ff8ff8731a1bb4fae410252b2e31bba0155fa69375b8e9350b",
+  "mt_pins": {
+    "server_sha256": "968c20dc975560d48587321068931e6d5b1ab2e0430491ff37b38d6eca8a8239",
+    "libraries": {
+      "libggml-base.so.0.25.3": "1688cc140ee8a09536d3ed4af94466c27b682643c33240d05dcb43842bb44778",
+      "libggml.so.0.25.3": "4c0f9721bc64192d73ce2070fd751fa47a34eb11329738379683850f18eb71cd",
+      "libllama-common.so.0.5.0": "69832c6e3bb1ff751d520b94f4529804c44e6d5689e46f4c7dd36f09564c2662",
+      "libmtmd.so.0.5.0": "876974aff7a301fe13e2b805369b6d08f32c2c442c64de8dfb67ace77accc5aa",
+      "libllama-server-impl.so": "93440d752df9414b674ce546ca136be6705e0749238080015bfd217d518d6d42",
+      "libggml-cuda.so.0.25.3": "a57d429e95e71c58ea27d02afbda1d6953920c6246ae310a883ab41db6144cb6",
+      "libllama.so.0.5.0": "c331fdcc85ddc0a2f730054b92e7603176aa617482b1450351c57794bae08404",
+      "libggml-cpu.so.0.25.3": "e86506ede6aa20a03ff019005f24d1001e0a5fa50b733e92cdad082558d63de0"
+    }
+  }
+}
