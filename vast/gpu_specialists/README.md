@@ -29,12 +29,12 @@ GPU khác hay A10040GB không nằm trong cấu hình hỗ trợ này. Startup k
 
 Mặc định LLM dùng `--gpu-util 0.78` khi bật specialists, `0.80` khi tắt; embed/rerank giữ `0.05/0.06`. Khóa admission yêu cầu ít nhất **8192 MiB free** (6144 MiB model +2048 MiB reserve). Nếu thực tế không đủ, bootstrap dừng và báo lỗi; không chỉnh hay dừng resident. Có thể giảm `--gpu-util` và dựng lại instance được phép thuê. `--max-model-len`, `--llm-model`, `--embed-model`, `--rerank-model` hiện có vẫn được hỗ trợ. Việc override embed/rerank phải phù hợp model fine-tuned của gateway.
 
-Repo này chạy độc lập: bundle `runtime.tar.gz` chứa nguyên các source cần thiết từ gateway commit `0650f9d7d0b40f9eefb94f3059e1516d842ac112`, gồm cả MT service/child supervisor và OCR GPU accounting helper. Kiểm SHA256 bundle và từng file theo `runtime-manifest.json`; không clone gateway trên instance, không cần parent checkout hay quyền đọc GitHub repo từ instance. Rebuild từ commit đã review:
+Repo này chạy độc lập: bundle `runtime.tar.gz` chứa nguyên các source cần thiết từ gateway commit `12c4b911319b993e04bccbf3e5ff57eac4d1e369`, gồm cả MT service/child supervisor và OCR GPU accounting helper. Kiểm SHA256 bundle và từng file theo `runtime-manifest.json`; không clone gateway trên instance, không cần parent checkout hay quyền đọc GitHub repo từ instance. Rebuild từ commit đã review:
 
 ```sh
 python3 vast/gpu_specialists/make_bundle.py \
   --gateway-repo /path/to/secai-agent-gateway \
-  --revision 0650f9d7d0b40f9eefb94f3059e1516d842ac112
+  --revision 12c4b911319b993e04bccbf3e5ff57eac4d1e369
 ```
 
 ## Instance hiện có

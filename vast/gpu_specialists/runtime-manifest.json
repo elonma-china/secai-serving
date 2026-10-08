@@ -1,9 +1,9 @@
 {
-  "gateway_revision": "0650f9d7d0b40f9eefb94f3059e1516d842ac112",
+  "gateway_revision": "12c4b911319b993e04bccbf3e5ff57eac4d1e369",
   "files": {
     "deploy/gpu_stage/__init__.py": "0d49c728aebd4fa2f3711f19f5f71fdf8972ae0099b7fd489d635ffbb4840710",
-    "deploy/gpu_stage/coordinator.py": "3f5f4164112dc5dc7fa699241572daf8f6e4e2bfff6ab3383a60d0995c4ce71c",
-    "deploy/gpu_stage/owner.py": "b804c8a81c4ab629c70b283567b672b43784d085913c4575c98ea23e0ed546c1",
+    "deploy/gpu_stage/coordinator.py": "d40a74d0b7bebebe9231d774d25f490caabcf0add176ff2acf026e9330467911",
+    "deploy/gpu_stage/owner.py": "3b0cb5b616ce2db9b8216ed374ca2041816fc0a72ea2c233f899c8cbf9ed27d3",
     "deploy/gpu_stage/mt_diagnostic.py": "7bbe9a84fcccf477818de8bf356fff13014026a30edf74ab3c4773d89002a33b",
     "deploy/gpu_stage/mt_on_demand.py": "cf06c2775f94513d4ac84a7bfbb37f687dff71a23ece13de6ac2f7e6cb6a0d9f",
     "deploy/mt_cpu_service/service.py": "b8a36d7cf2639f429619eaeac78e8d76cb25f4d7eeb28a2ac7dace3dfa6916a9",
@@ -14,7 +14,7 @@
     "evals/translation_ocr/real_quality/qwen_server_real_pages_bounded.py": "9308887a3939f08d000b833fa92190b1f826e0b273a86b7a89271ed88098d1aa",
     "deploy/ocr/server.py": "d8edaaf7a9dae4d784b9cef1d361bb855216922dcd0dbb3622f62cdfb8289543"
   },
-  "bundle_sha256": "06969ec9969918ff8ff8731a1bb4fae410252b2e31bba0155fa69375b8e9350b",
+  "bundle_sha256": "55a3f1925739b2d00368d371a5ba34fe1bb54c03298ca87812afbc4b01994d61",
   "mt_pins": {
     "server_sha256": "968c20dc975560d48587321068931e6d5b1ab2e0430491ff37b38d6eca8a8239",
     "libraries": {
