@@ -69,7 +69,7 @@ class SpecialistsTests(unittest.TestCase):
             root = Path(folder)
             bootstrap.extract_source(root)
             manifest = json.loads((root / "runtime-manifest.json").read_text())
-            self.assertEqual(manifest["gateway_revision"], "0650f9d7d0b40f9eefb94f3059e1516d842ac112")
+            self.assertEqual(manifest["gateway_revision"], "12c4b911319b993e04bccbf3e5ff57eac4d1e369")
             path = root / "source/deploy/gpu_stage/mt_on_demand.py"
             bootstrap.check_hash(path, manifest["files"]["deploy/gpu_stage/mt_on_demand.py"])
             path.write_text("tampered")
