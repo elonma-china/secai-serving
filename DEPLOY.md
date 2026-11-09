@@ -1,4 +1,8 @@
-# DEPLOY.md — serving secai trên vast.ai (dự án riêng, version `v1.0`)
+# DEPLOY.md — legacy A100 serving trên vast.ai (version `v1.0`)
+
+> Mục tiêu mới 4× RTX PRO 6000 Blackwell + RTX 5090 nằm ở
+> [blackwell/README.md](blackwell/README.md). Tài liệu bên dưới chỉ dành cho
+> profile A100 cũ.
 
 > Dự án này CHỈ lo hạ tầng model: **LLM + embedding + reranker** (6 replica vLLM + nginx LB)
 > trên máy 2×A100 thuê ở vast.ai. Kết quả là **3 URL** — dán vào script `deploy.sh` của
