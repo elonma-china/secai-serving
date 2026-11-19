@@ -21,6 +21,35 @@ Needs 2 GPUs of >= 90 GB, >= 142 GiB free host RAM (2x55 GiB KV offload + headro
 Models are pulled from the public `secai1999/*` repos on Hugging Face; `HF_TOKEN` is optional (higher rate limits). `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
 Clients send `X-Session-Id` so a session stays on one replica and reuses its cached KV.
 
+## Prebuilt image (fast deploy)
+
+`docker/Dockerfile` = pinned vLLM nightly (`7c3a9302f`, the build measured in BENCHMARKS) + nginx/zstd/hf_xet + this
+`stack/`, with the FP8 prefill patch applied and verified at build time. It adds ~7.5 MB on top of the vLLM image, so a
+host that already has that base pulls almost nothing. Weights and compile caches stay on the `/workspace` volume:
+
+| Boot step (`docker/boot.sh`) | What it removes from the critical path |
+|---|---|
+| `stack/fetch_models.py`: 5 models (~32 GB) in parallel over Xet, pinned in `stack/models.lock`, skipped when present | vLLM pulling each model lazily, one service after another |
+| `stack/cache_bundle.py restore`: torch.compile/Triton/FlashInfer caches from a private HF repo, keyed by vLLM version + GPU + the full `up.sh --dry-run` plan | recompiling every service on a new machine |
+| `up.sh` starts replica A (GPU0) immediately, alongside the GPU1 chain | A waiting for embed/rerank/OCR/MT to finish |
+| watchdog: an unhealthy service for 60 s triggers `down.sh` + `up.sh` (max 3, then exit for the restart policy) | no auto-restart before |
+
+```bash
+docker/build.sh [--push]                                   # tag ghcr.io/elonma-china/secai-serving:<sha>-<date> + latest
+# Local/on-prem 2x RTX PRO 6000 (key in $SECAI_WORKSPACE/api.key, chmod 600):
+SECAI_WORKSPACE=/srv/secai-serving docker compose -f docker/compose.yaml up -d
+# Vast.ai (nothing is rented without --yes):
+docker/vast.sh offers; docker/vast.sh create <offer_id> --yes
+docker/vast.sh key <instance_id> ./api.key                 # boot waits for it; models download meanwhile
+docker/vast.sh tunnel <instance_id>                        # 38005/38000/38002/38004/38083 on localhost
+# First boot of a new image/config: add CACHE_SAVE=1 and an HF_TOKEN with write access to publish the cache bundle
+# (it is saved from boot.sh so the key matches the env the stack ran with).
+```
+
+Progress is in `/workspace/logs/boot.log`; per-service ready times in `/workspace/logs/startup-timeline.log`.
+Without the image, `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MODEL_DIR=/workspace/models bash stack/up.sh`
+gives the same parallel fetch on a plain host. `stack/down.sh` stops everything `up.sh` started.
+
 ## What is optimized
 
 - **KV offload**: GPU -> pinned RAM (55 GiB/replica) -> NVMe (`TieringOffloadingSpec`, trimmed to 80 GiB/replica by `kv_gc.sh`).
@@ -42,6 +71,8 @@ Results vs the previous setup (32 concurrent agents, each running a 16-turn tool
 | `VLLM_SM120_FP8_PREFILL` | `1` | `0` skips the attention patch (`python3 stack/patches/sm120_fp8_prefill.py revert` restores the original file) |
 | `LLM_UTIL_A` / `LLM_UTIL_B` | 0.90 / 0.74 | GPU memory fraction; B shares GPU1 with the four aux models |
 | `LLM_BATCHED_TOKENS`, `LLM_MAX_NUM_SEQS`, `LLM_MAX_MODEL_LEN` | 16384, 64, 131072 | |
+| `MODEL_DIR` | empty (image: `/workspace/models`) | serve local copies from `fetch_models.py` under the Hub names, offline |
+| `CACHE_DIR` | `/workspace/cache` | torch.compile / Triton / FlashInfer caches (persist across restarts) |
 
 ## Benchmark and test tools (`stack/`)
 

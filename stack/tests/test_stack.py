@@ -127,6 +127,53 @@ def test_gateway_protocol_end_to_end():
         srv.shutdown(); fake.shutdown()
 
 
+def test_dry_run_local_model_dir_keeps_served_names():
+    out = dry(MODEL_DIR="/models")
+    for repo in ("LLM", "Embedding", "Rerank", "OCR", "Translate"):
+        name = f"secai1999/{repo}-Autoscan-v1"
+        assert f"serve /models/{repo}-Autoscan-v1 --served-model-name {name}" in out, name
+    assert "--prompt-file /models/OCR-Autoscan-v1/prompts/plain_ocr.txt" in out
+    hub = dry()  # without MODEL_DIR the Hub names are served directly
+    assert "serve secai1999/LLM-Autoscan-v1 --served-model-name secai1999/LLM-Autoscan-v1" in hub and "--prompt-file" not in hub
+
+
+def test_replica_a_starts_before_the_gpu1_chain():
+    src = (ROOT / "stack/up.sh").read_text()
+    a, emb, b = (src.index(f"ensure {n} ") for n in ("llm-a", "embedding", "llm-b"))
+    assert a < emb < b
+
+
+fm = load("fetch_models")
+
+
+def test_models_lock_pins_every_model():
+    lock = fm.load_lock(env={})
+    assert [v for v, _, _ in lock] == ["LLM_MODEL", "EMBED_MODEL", "RERANK_MODEL", "OCR_MODEL", "MT_MODEL"]
+    assert all(r.startswith("secai1999/") and len(rev) == 40 for _, r, rev in lock)
+    up = (ROOT / "stack/up.sh").read_text()
+    assert all(f'{v}:-{r}}}' in up for v, r, _ in lock)  # up.sh defaults == lock file
+    over = dict((v, (r, rev)) for v, r, rev in fm.load_lock(env={"MT_MODEL": "x/y", "MT_MODEL_REVISION": "abc"}))
+    assert over["MT_MODEL"] == ("x/y", "abc") and over["LLM_MODEL"][1] == lock[0][2]
+
+
+def test_fetch_marker_and_offline_check(tmp_path=None):
+    import os, tempfile
+    d = Path(tmp_path or tempfile.mkdtemp())
+    repo, rev = "secai1999/LLM-Autoscan-v1", "a" * 40
+    assert not fm.is_done(d, repo, rev)
+    (d / "LLM-Autoscan-v1").mkdir(parents=True)
+    (d / "LLM-Autoscan-v1" / fm.MARKER).write_text(f"{repo}@{rev}\n")
+    assert fm.is_done(d, repo, rev) and not fm.is_done(d, repo, "b" * 40)
+    out = subprocess.run([sys.executable, str(ROOT / "stack/fetch_models.py"), "--offline"], capture_output=True,
+                         text=True, env={**os.environ, "MODEL_DIR": str(d)})
+    assert out.returncode == 1 and "missing:" in out.stdout
+
+
+def test_shell_scripts_parse():
+    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh"):
+        subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
+
+
 sim = load("agent_sim")
 
 

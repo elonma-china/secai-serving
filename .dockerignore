@@ -1,0 +1,5 @@
+*
+!stack/
+!docker/boot.sh
+stack/**/__pycache__
+stack/benchmarks/

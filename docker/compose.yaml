@@ -1,0 +1,31 @@
+# Local / on-prem host with 2x RTX PRO 6000:  docker compose -f docker/compose.yaml up -d
+# Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). Models and compile caches persist in $SECAI_WORKSPACE, so
+# only the first start downloads (~32 GB) and compiles; later starts load from local disk.
+services:
+  serving:
+    image: ${SECAI_SERVING_IMAGE:-ghcr.io/elonma-china/secai-serving:latest}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    init: true
+    restart: unless-stopped
+    network_mode: host        # same port layout as a bare host: 8005/8000/8002/8004 public, OCR 18083 loopback only
+    shm_size: 120gb           # 2x55 GiB pinned KV offload lives in /dev/shm (+ headroom); the host needs the RAM too
+    ulimits:
+      memlock: -1
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - ${SECAI_WORKSPACE:-/srv/secai-serving}:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8005/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40m
