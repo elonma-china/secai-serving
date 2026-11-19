@@ -1,0 +1,16 @@
+== on
+NEEDLE 3/3
+needle depth 0.05: OK  prompt_tokens=118619 16.1s answer='d07f9b'
+needle depth 0.50: OK  prompt_tokens=118619 16.1s answer='709455'
+needle depth 0.95: OK  prompt_tokens=118578 16.1s answer='b9027b'
+p32k: Median TTFT (ms):                        3423.53   
+p120k: Median TTFT (ms):                        13283.33  
+fmha log lines: 0
+== off
+NEEDLE 3/3
+needle depth 0.05: OK  prompt_tokens=118619 24.2s answer='a326f7'
+needle depth 0.50: OK  prompt_tokens=118619 24.2s answer='6f8f19'
+needle depth 0.95: OK  prompt_tokens=118578 24.2s answer='1ac376'
+p32k: Median TTFT (ms):                        4043.61   
+p120k: Median TTFT (ms):                        21101.19  
+fmha log lines: 0

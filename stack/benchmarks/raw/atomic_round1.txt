@@ -1,0 +1,32 @@
+== off
+GPU KV cache size: 1,701,055 tokens, Maximum concurrency for 131,072 tokens per request: 12.98x
+NLL tokens=19282 mean_nll=0.57282 ppl=1.7733
+NEEDLE 3/3
+decode c=1: 65 tok/s total, ~15.4 ms/token/request
+decode c=16: 837 tok/s total, ~19.1 ms/token/request
+== fp8attn
+GPU KV cache size: 1,701,055 tokens, Maximum concurrency for 131,072 tokens per request: 12.98x
+NLL tokens=19282 mean_nll=0.56839 ppl=1.7654
+NEEDLE 3/3
+decode c=1: 65 tok/s total, ~15.4 ms/token/request
+decode c=16: 838 tok/s total, ~19.1 ms/token/request
+== mtp1
+GPU KV cache size: 1,457,130 tokens, Maximum concurrency for 131,072 tokens per request: 11.12x
+NLL tokens=19282 mean_nll=0.56839 ppl=1.7654
+NEEDLE 3/3
+decode c=1: 99 tok/s total, ~10.1 ms/token/request
+decode c=16: 1243 tok/s total, ~12.9 ms/token/request
+(APIServer pid=21862) INFO 11-19 03:41:15 [metrics.py:135] SpecDecoding metrics: Mean acceptance length: 1.89, Accepted throughput: 95.39 tokens/s, Drafted throughput: 107.59 tokens/s, Accepted: 954 tokens, Drafted: 1076 tokens, Verified: 1076 tokens, Per-posi
+== mtp2
+GPU KV cache size: 1,402,605 tokens, Maximum concurrency for 131,072 tokens per request: 10.70x
+NLL tokens=19282 mean_nll=0.56839 ppl=1.7654
+NEEDLE 3/3
+decode c=1: 121 tok/s total, ~8.2 ms/token/request
+decode c=16: 1372 tok/s total, ~11.7 ms/token/request
+(APIServer pid=22449) INFO 11-19 03:44:20 [metrics.py:135] SpecDecoding metrics: Mean acceptance length: 2.59, Accepted throughput: 648.72 tokens/s, Drafted throughput: 817.30 tokens/s, Accepted: 6488 tokens, Drafted: 8174 tokens, Verified: 8174 tokens, Per-po
+== nvfp4kv
+GPU KV cache size: 2,792,301 tokens, Maximum concurrency for 131,072 tokens per request: 21.30x
+NLL tokens=19282 mean_nll=0.57244 ppl=1.7726
+NEEDLE 3/3
+decode c=1: 65 tok/s total, ~15.5 ms/token/request
+decode c=16: 820 tok/s total, ~19.5 ms/token/request

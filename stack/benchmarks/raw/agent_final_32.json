@@ -1,0 +1,30 @@
+{
+ "agents": 32,
+ "completed": 32,
+ "correct": 32,
+ "errors": 0,
+ "bad_tool_calls": 0,
+ "turns_total": 512,
+ "turns_per_agent_median": 16.0,
+ "max_prompt_tokens": 112617,
+ "prompt_tokens_total": 29424520,
+ "output_tokens_total": 17707,
+ "ttft_s": {
+  "p50": 13.07763671875,
+  "p95": 70.87073993682861,
+  "max": 127.41210889816284
+ },
+ "agent_wall_s": {
+  "p50": 618.4434616565704,
+  "max": 648.8685600757599
+ },
+ "run_wall_s": 651.554053068161,
+ "output_tok_per_s": 27.17656335129515,
+ "cache_delta": {
+  "vllm:prefix_cache_queries_total": 29424520.0,
+  "vllm:prefix_cache_hits_total": 9979200.0,
+  "vllm:external_prefix_cache_queries_total": 19445320.0,
+  "vllm:external_prefix_cache_hits_total": 13920000.0
+ },
+ "error_samples": []
+}

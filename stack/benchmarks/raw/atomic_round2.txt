@@ -1,0 +1,16 @@
+== mtp3
+GPU KV cache size: 1,360,527 tokens, Maximum concurrency for 131,072 tokens per request: 10.38x
+NLL tokens=19282 mean_nll=0.56839 ppl=1.7654
+needle depth 0.50: OK  prompt_tokens=118619 16.8s answer='85b412'
+NEEDLE 3/3
+decode c=1: 130 tok/s total, ~7.7 ms/token/request
+decode c=16: 1376 tok/s total, ~11.6 ms/token/request
+(APIServer pid=24192) INFO 11-19 03:51:54 [metrics.py:135] SpecDecoding metrics: Mean acceptance length: 3.11, Accepted throughput: 191.78 tokens/s, Drafted throughput: 272.98 tokens/s, Accepted: 1918 tokens, Drafted: 2730 tokens, Verified: 2730 tokens, Per-po
+== mtp2nvfp4
+GPU KV cache size: 2,202,439 tokens, Maximum concurrency for 131,072 tokens per request: 16.80x
+NLL tokens=19282 mean_nll=0.57093 ppl=1.7699
+needle depth 0.50: OK  prompt_tokens=118619 25.6s answer='68a42c'
+NEEDLE 3/3
+decode c=1: 120 tok/s total, ~8.4 ms/token/request
+decode c=16: 1371 tok/s total, ~11.7 ms/token/request
+(APIServer pid=24855) INFO 11-19 03:55:25 [metrics.py:135] SpecDecoding metrics: Mean acceptance length: 2.58, Accepted throughput: 210.29 tokens/s, Drafted throughput: 266.39 tokens/s, Accepted: 2103 tokens, Drafted: 2664 tokens, Verified: 2664 tokens, Per-po
