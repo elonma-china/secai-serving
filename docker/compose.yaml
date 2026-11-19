@@ -1,4 +1,5 @@
-# Local / on-prem host with 2x RTX PRO 6000:  docker compose -f docker/compose.yaml up -d
+# Local / on-prem host with 2x RTX PRO 6000 (NVIDIA driver with CUDA >= 13.2, nvidia-container-toolkit):
+#   docker compose -f docker/compose.yaml up -d
 # Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). Models and compile caches persist in $SECAI_WORKSPACE, so
 # only the first start downloads (~32 GB) and compiles; later starts load from local disk.
 services:

@@ -17,7 +17,7 @@ ssh_target() { # instance id -> "port host"
 
 case "${1:-}" in
   offers)
-    vastai search offers 'num_gpus=2 gpu_name='"$GPU_NAME"' gpu_ram>=90 cpu_ram>=200 disk_space>='"$DISK_GB"' inet_down>=500 reliability>0.98 rentable=true' -o 'dph+' | head -15;;
+    vastai search offers 'num_gpus=2 gpu_name='"$GPU_NAME"' gpu_ram>=90 cuda_vers>=13.2 cpu_ram>=200 disk_space>='"$DISK_GB"' inet_down>=500 reliability>0.98 rentable=true' -o 'dph+' | head -15;;
   create)
     [ -n "${2:-}" ] || { echo "usage: $0 create <offer_id> [--yes]" >&2; exit 2; }
     cmd=(vastai create instance "$2" --image "$IMAGE" --disk "$DISK_GB" --ssh --direct --onstart-cmd "$ONSTART")
