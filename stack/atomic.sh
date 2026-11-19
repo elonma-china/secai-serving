@@ -3,7 +3,7 @@
 # Profiles: mtp3 | mtp2nvfp4 | mtp3nvfp4 (extra) ; off (FP8 attention patch disabled) | fp8attn | mtp1 | mtp2 | nvfp4kv  (all but off have FP8 attention on)
 # Output: /workspace/results/atomic/summary.txt     Needs API_KEY, HF_TOKEN.  Usage: bash atomic.sh [profile ...]
 set -uo pipefail
-M=orcarouter/Qwen3.8-27B-Uncensored-NVFP4; PORT=8032; OUT=/workspace/results/atomic; S=/workspace/secai/stack
+M=secai1999/LLM-Autoscan-v1; PORT=8032; OUT=/workspace/results/atomic; S=/workspace/secai/stack
 export HF_HOME=/workspace/hf-cache HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}" VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0 VLLM_API_KEY="$API_KEY"
 declare -A EXTRA=( [off]="" [fp8attn]="" [mtp1]='--speculative-config {"method":"mtp","num_speculative_tokens":1}'
   [mtp2]='--speculative-config {"method":"mtp","num_speculative_tokens":2}' [nvfp4kv]="--kv-cache-dtype nvfp4"

@@ -2,7 +2,7 @@
 # Sequential single-GPU (GPU0) profile sweep at 131K context. Results: /workspace/results/sweep/<profile>/
 # Usage: API_KEY=.. HF_TOKEN=.. bash sweep.sh [profile ...]     (default: all)
 set -uo pipefail
-M=orcarouter/Qwen3.8-27B-Uncensored-NVFP4; PORT=8021; OUT=/workspace/results/sweep; ROOT=/workspace/secai
+M=secai1999/LLM-Autoscan-v1; PORT=8021; OUT=/workspace/results/sweep; ROOT=/workspace/secai
 export HF_HOME=/workspace/hf-cache HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}" VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0
 export VLLM_API_KEY="$API_KEY" OPENAI_API_KEY="$API_KEY"
 declare -A EXTRA=(

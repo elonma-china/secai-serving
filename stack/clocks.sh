@@ -2,7 +2,7 @@
 # Sample SM clock / power / throttle reasons on GPU0 during a prefill window and a decode window.
 # Output: /workspace/results/clocks/{prefill,decode}.csv   Usage: API_KEY=.. HF_TOKEN=.. bash clocks.sh
 set -uo pipefail
-M=orcarouter/Qwen3.8-27B-Uncensored-NVFP4; PORT=8023; OUT=/workspace/results/clocks
+M=secai1999/LLM-Autoscan-v1; PORT=8023; OUT=/workspace/results/clocks
 export HF_HOME=/workspace/hf-cache HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}" VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0 OPENAI_API_KEY="$API_KEY" VLLM_API_KEY="$API_KEY"
 mkdir -p "$OUT"; rm -f "$OUT"/*
 vllm serve "$M" --host 127.0.0.1 --port $PORT --trust-remote-code --gpu-memory-utilization 0.90 --max-model-len 131072 --max-num-seqs 64 \

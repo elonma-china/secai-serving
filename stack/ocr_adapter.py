@@ -12,8 +12,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-MODEL = "ATH-MaaS/OvisOCR3"
+MODEL = "secai1999/OCR-Autoscan-v1"
 LEGACY_MODEL = "Qwen/Qwen3-VL-2B-Instruct"
+PREVIOUS_MODEL = "ATH-MaaS/OvisOCR3"  # name used before the secai1999 mirror; still accepted from existing clients
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
@@ -84,7 +85,7 @@ def make_handler(token: str, backend_key: str, backend_url: str, prompt: str):
                     raise ValueError("request too large or empty")
                 request = json.loads(self.rfile.read(size))
                 requested_model = request.get("model")
-                if requested_model not in (MODEL, LEGACY_MODEL):
+                if requested_model not in (MODEL, LEGACY_MODEL, PREVIOUS_MODEL):
                     raise ValueError("unsupported OCR model")
                 calibration = request.get("calibration_prompt", "standard")
                 if calibration not in ("standard", "conditional", "logical", "arabic"):

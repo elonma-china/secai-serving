@@ -76,6 +76,21 @@ def test_dry_run_final_defaults():
     assert "speculative-config" not in dry(LLM_MTP="0") and "--kv-cache-dtype nvfp4" in dry(LLM_KV_DTYPE="nvfp4")
 
 
+def test_dry_run_uses_secai1999_model_names():
+    out = dry()
+    for name in ("secai1999/LLM-Autoscan-v1", "secai1999/Embedding-Autoscan-v1", "secai1999/Rerank-Autoscan-v1",
+                 "secai1999/OCR-Autoscan-v1", "secai1999/Translate-Autoscan-v1"):
+        assert name in out, name
+    for old in ("orcarouter/", "DuyTa/", "ATH-MaaS/", "tencent/"):
+        assert old not in out, old
+
+
+def test_adapter_default_models():
+    assert mt.MODEL == "secai1999/Translate-Autoscan-v1"
+    ocr = load("ocr_adapter")
+    assert ocr.MODEL == "secai1999/OCR-Autoscan-v1" and ocr.PREVIOUS_MODEL == "ATH-MaaS/OvisOCR3"
+
+
 sim = load("agent_sim")
 
 

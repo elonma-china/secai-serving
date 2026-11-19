@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-MODEL = os.environ.get("MT_MODEL", "tencent/Hy-MT2-1.8B-FP8")
+MODEL = os.environ.get("MT_MODEL", "secai1999/Translate-Autoscan-v1")
 MAX_TEXT_CHARS = 60_000
 SAMPLING = {"temperature": 0.7, "top_p": 0.6, "top_k": 20, "repetition_penalty": 1.05}
 ONLY = "Note that you must **ONLY output the translated result without any additional explanation**"

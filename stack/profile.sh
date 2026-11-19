@@ -3,7 +3,7 @@
 # per-kernel GPU time table (cuda_gpu_kern_sum). Output: /workspace/results/nsys/{prefill,decode}.{nsys-rep,csv}
 # Usage: API_KEY=.. HF_TOKEN=.. bash profile.sh
 set -uo pipefail
-M=orcarouter/Qwen3.8-27B-Uncensored-NVFP4; PORT=8021; OUT=/workspace/results/nsys; NSYS=/opt/nvidia/nsight-systems/2025.6.3/bin/nsys
+M=secai1999/LLM-Autoscan-v1; PORT=8021; OUT=/workspace/results/nsys; NSYS=/opt/nvidia/nsight-systems/2025.6.3/bin/nsys
 export HF_HOME=/workspace/hf-cache HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}" VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0 OPENAI_API_KEY="$API_KEY" VLLM_API_KEY="$API_KEY"
 SIZES="1 2 4 8 16 24 32 40 48 56 64 128 192 256 320 384 448 512 1024 2048 4096 8192 12288 16384"
 mkdir -p "$OUT"; rm -f "$OUT"/*
