@@ -13,11 +13,11 @@ if [ "${1:-}" = "--dry-run" ] && [ "$#" -eq 1 ]; then DRY=1
 elif [ "$#" -ne 0 ]; then echo 'Usage: up.sh [--dry-run]' >&2; exit 2
 fi
 
-LLM_MODEL="${LLM_MODEL:-orcarouter/Qwen3.8-27B-Uncensored-NVFP4}"
-EMBED_MODEL="${EMBED_MODEL:-DuyTa/sec-embedding}"
-RERANK_MODEL="${RERANK_MODEL:-DuyTa/sec-rerank}"
-OCR_MODEL="${OCR_MODEL:-ATH-MaaS/OvisOCR3}"
-MT_MODEL="${MT_MODEL:-tencent/Hy-MT2-1.8B-FP8}"
+LLM_MODEL="${LLM_MODEL:-secai1999/LLM-Autoscan-v1}"
+EMBED_MODEL="${EMBED_MODEL:-secai1999/Embedding-Autoscan-v1}"
+RERANK_MODEL="${RERANK_MODEL:-secai1999/Rerank-Autoscan-v1}"
+OCR_MODEL="${OCR_MODEL:-secai1999/OCR-Autoscan-v1}"
+MT_MODEL="${MT_MODEL:-secai1999/Translate-Autoscan-v1}"
 LLM_MAX_LEN="${LLM_MAX_MODEL_LEN:-131072}"
 LLM_MAX_SEQS="${LLM_MAX_NUM_SEQS:-64}"
 LLM_UTIL_A="${LLM_UTIL_A:-0.90}"      # GPU0: LLM only

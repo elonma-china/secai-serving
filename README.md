@@ -4,10 +4,10 @@ One host, two RTX PRO 6000 (96 GB), everything on vLLM. Context 131072. Tuned fo
 
 | Port | Service | Where |
 |---|---|---|
-| 8005 | LLM (nginx, session-affine) -> 8001 / 8003 | `orcarouter/Qwen3.8-27B-Uncensored-NVFP4`, one TP1 replica per GPU |
-| 8000 / 8002 | embedding / rerank | `DuyTa/sec-embedding`, `DuyTa/sec-rerank` (GPU1) |
-| 8004 | translation adapter -> vLLM | `tencent/Hy-MT2-1.8B-FP8` (GPU1) |
-| 18083 | OCR adapter (loopback only) | `ATH-MaaS/OvisOCR3` (GPU1) |
+| 8005 | LLM (nginx, session-affine) -> 8001 / 8003 | `secai1999/LLM-Autoscan-v1`, one TP1 replica per GPU |
+| 8000 / 8002 | embedding / rerank | `secai1999/Embedding-Autoscan-v1`, `secai1999/Rerank-Autoscan-v1` (GPU1) |
+| 8004 | translation adapter -> vLLM | `secai1999/Translate-Autoscan-v1` (GPU1) |
+| 18083 | OCR adapter (loopback only) | `secai1999/OCR-Autoscan-v1` (GPU1) |
 
 ## Run
 
@@ -18,6 +18,7 @@ python3 stack/tests/test_stack.py                          # offline tests (or r
 ```
 
 Needs 2 GPUs of >= 90 GB, >= 142 GiB free host RAM (2x55 GiB KV offload + headroom), `nginx`, and ~160 GB free disk for the NVMe KV tier.
+Models are pulled from the public `secai1999/*` repos on Hugging Face; `HF_TOKEN` is optional (higher rate limits). `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
 Clients send `X-Session-Id` so a session stays on one replica and reuses its cached KV.
 
 ## What is optimized

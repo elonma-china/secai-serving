@@ -7,6 +7,10 @@ POST /v1/translate
    "context": "background text",                       # optional -> Background prompt
    "format_type": "JSON"}                              # optional -> Structured Data prompt
 Hy-MT2 has no default system prompt, so the prompt is the whole instruction.
+
+Gateway protocol (secai_gateway translation/multilang specialist client): when the body carries "source_lang",
+language codes (vi, en, zh, ja, ko, fr, de, es, ru, ar) are mapped to language names and the reply is exactly
+{"translated_text": str, "model": str}. Without "source_lang" the reply is {"model", "translation"} as before.
 """
 
 import argparse
@@ -17,9 +21,11 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-MODEL = os.environ.get("MT_MODEL", "tencent/Hy-MT2-1.8B-FP8")
+MODEL = os.environ.get("MT_MODEL", "secai1999/Translate-Autoscan-v1")
 MAX_TEXT_CHARS = 60_000
 SAMPLING = {"temperature": 0.7, "top_p": 0.6, "top_k": 20, "repetition_penalty": 1.05}
+LANG_NAMES = {"vi": "Vietnamese", "en": "English", "zh": "Chinese", "zh-Hans": "Chinese", "ja": "Japanese",
+              "ko": "Korean", "fr": "French", "de": "German", "es": "Spanish", "ru": "Russian", "ar": "Arabic"}
 ONLY = "Note that you must **ONLY output the translated result without any additional explanation**"
 
 
@@ -85,7 +91,13 @@ def make_handler(token: str, backend_url: str):
                 if size < 1 or size > 1_000_000:
                     raise ValueError("request too large or empty")
                 req = json.loads(self.rfile.read(size))
-                prompt = build_prompt(req["text"], req["target_lang"], req.get("glossary"), req.get("style"),
+                gateway = "source_lang" in req
+                if gateway and req["source_lang"] not in LANG_NAMES:
+                    raise ValueError("unsupported source_lang")
+                target = LANG_NAMES.get(req["target_lang"], req["target_lang"]) if isinstance(req["target_lang"], str) else req["target_lang"]
+                if gateway and req["target_lang"] not in LANG_NAMES:
+                    raise ValueError("unsupported target_lang")
+                prompt = build_prompt(req["text"], target, req.get("glossary"), req.get("style"),
                                       req.get("context"), req.get("format_type"))
                 payload = build_request(prompt, min(int(req.get("max_tokens", 4096)), 8192))
             except (ValueError, KeyError, TypeError, json.JSONDecodeError):
@@ -97,7 +109,8 @@ def make_handler(token: str, backend_url: str):
                 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
                 with opener.open(backend, timeout=180) as response:
                     completion = json.load(response)
-                self.send_json(200, {"model": MODEL, "translation": completion["choices"][0]["message"]["content"].strip()})
+                text = completion["choices"][0]["message"]["content"].strip()
+                self.send_json(200, {"translated_text": text, "model": MODEL} if gateway else {"model": MODEL, "translation": text})
             except (urllib.error.URLError, ValueError, KeyError, IndexError, TypeError):
                 self.send_json(502, {"detail": "Translation backend failed"})
 

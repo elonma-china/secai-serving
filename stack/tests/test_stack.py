@@ -76,6 +76,57 @@ def test_dry_run_final_defaults():
     assert "speculative-config" not in dry(LLM_MTP="0") and "--kv-cache-dtype nvfp4" in dry(LLM_KV_DTYPE="nvfp4")
 
 
+def test_dry_run_uses_secai1999_model_names():
+    out = dry()
+    for name in ("secai1999/LLM-Autoscan-v1", "secai1999/Embedding-Autoscan-v1", "secai1999/Rerank-Autoscan-v1",
+                 "secai1999/OCR-Autoscan-v1", "secai1999/Translate-Autoscan-v1"):
+        assert name in out, name
+    for old in ("orcarouter/", "DuyTa/", "ATH-MaaS/", "tencent/"):
+        assert old not in out, old
+
+
+def test_adapter_default_models():
+    assert mt.MODEL == "secai1999/Translate-Autoscan-v1"
+    ocr = load("ocr_adapter")
+    assert ocr.MODEL == "secai1999/OCR-Autoscan-v1" and ocr.PREVIOUS_MODEL == "ATH-MaaS/OvisOCR3"
+
+
+
+def test_gateway_protocol_language_codes():
+    assert mt.LANG_NAMES["vi"] == "Vietnamese" and mt.LANG_NAMES["zh"] == "Chinese"
+    assert all(mt.LANG_NAMES[c] for c in ("vi", "en", "zh", "ja", "ko", "fr", "de", "es", "ru", "ar"))
+
+
+def test_gateway_protocol_end_to_end():
+    import threading, urllib.request
+    from http.server import ThreadingHTTPServer
+    seen = {}
+    class Fake(mt.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen["prompt"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["messages"][0]["content"]
+            body = json.dumps({"choices": [{"message": {"content": " xin chao "}}]}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a): pass
+    fake = ThreadingHTTPServer(("127.0.0.1", 0), Fake); threading.Thread(target=fake.serve_forever, daemon=True).start()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), mt.make_handler("tok", f"http://127.0.0.1:{fake.server_port}"))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    def post(body):
+        req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/v1/translate", json.dumps(body).encode(),
+                                     {"Authorization": "Bearer tok", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req) as r: return r.status, json.load(r)
+        except urllib.error.HTTPError as e: return e.code, None
+    try:
+        status, out = post({"text": "hello", "source_lang": "en", "target_lang": "vi"})
+        assert status == 200 and out == {"translated_text": "xin chao", "model": mt.MODEL}
+        assert "into Vietnamese" in seen["prompt"]
+        status, out = post({"text": "hello", "target_lang": "Vietnamese"})
+        assert status == 200 and out == {"model": mt.MODEL, "translation": "xin chao"}
+        assert post({"text": "hello", "source_lang": "en", "target_lang": "xx"})[0] == 422
+    finally:
+        srv.shutdown(); fake.shutdown()
+
+
 sim = load("agent_sim")
 
 

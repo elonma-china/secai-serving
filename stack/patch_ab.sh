@@ -2,7 +2,7 @@
 # A/B the SM120 FP8 prefill patch on GPU0 (stop llm-a first). Same server twice: VLLM_SM120_FP8_PREFILL=0 then =1.
 # Output: /workspace/results/patchab/{off,on}.{needle,p32k,p120k}.log + summary lines.   Needs API_KEY, HF_TOKEN.
 set -uo pipefail
-M=orcarouter/Qwen3.8-27B-Uncensored-NVFP4; PORT=8031; OUT=/workspace/results/patchab
+M=secai1999/LLM-Autoscan-v1; PORT=8031; OUT=/workspace/results/patchab
 export HF_HOME=/workspace/hf-cache HUGGING_FACE_HUB_TOKEN="${HF_TOKEN:-}" VLLM_WORKER_MULTIPROC_METHOD=spawn CUDA_VISIBLE_DEVICES=0 OPENAI_API_KEY="$API_KEY" VLLM_API_KEY="$API_KEY"
 mkdir -p "$OUT"; [ -n "${MODES:-}" ] || rm -f "$OUT"/*
 python3 /workspace/secai/stack/patches/sm120_fp8_prefill.py apply

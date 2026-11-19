@@ -1,7 +1,7 @@
 # Benchmarks
 
 Hardware: 2x RTX PRO 6000 Blackwell (96 GB, **400 W cap**), 249 GB host RAM, NVMe. vLLM 0.34.0rc1.dev776, FlashInfer 0.7.4.
-Model: `orcarouter/Qwen3.8-27B-Uncensored-NVFP4`, context 131072. Raw outputs: [`raw/`](raw/).
+Model: `secai1999/LLM-Autoscan-v1` (byte-identical mirror of `orcarouter/Qwen3.8-27B-Uncensored-NVFP4`, which is what was measured), context 131072. Raw outputs: [`raw/`](raw/).
 
 ## 1. Agentic end-to-end (32 concurrent agents, same seed/workload in every row)
 
