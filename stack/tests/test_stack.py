@@ -169,8 +169,29 @@ def test_fetch_marker_and_offline_check(tmp_path=None):
     assert out.returncode == 1 and "missing:" in out.stdout
 
 
+def test_bind_host_limits_public_ports():
+    out = dry(BIND_HOST="127.0.0.1")
+    assert "0.0.0.0" not in out and out.count("--host 127.0.0.1") == 6
+    assert "--host 0.0.0.0" in dry() and "--host 127.0.0.1" in dry()
+
+
+def test_dockerfile_bakes_every_model_with_shard_layers():
+    df = (ROOT / "docker/Dockerfile").read_text()
+    assert df.index("fetch_models.py LLM_MODEL --include") < df.index("COPY stack /opt/secai/stack")  # models below code
+    for i in range(1, 6):
+        assert f"model-0000{i}-of-00005.safetensors" in df
+    assert "EMBED_MODEL RERANK_MODEL OCR_MODEL MT_MODEL" in df and "fetch_models.py --offline" in df
+    assert "HF_HUB_OFFLINE" not in df.split("ARG GIT_SHA")[1]  # cache_bundle restore needs the Hub
+
+
+def test_fetch_include_patterns_are_repeatable():
+    import argparse
+    out = subprocess.run([sys.executable, str(ROOT / "stack/fetch_models.py"), "--dry-run", "LLM_MODEL"], capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.count("\n") == 1
+
+
 def test_shell_scripts_parse():
-    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh"):
+    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh"):
         subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
 
 

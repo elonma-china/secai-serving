@@ -2,7 +2,9 @@
 
 vLLM otherwise pulls each model lazily, one service at a time, while the previous one compiles; fetching all ~32 GB
 up front in parallel (Xet, high-performance mode) takes the network off the critical path. A finished model gets a
-`.secai-revision` marker, so a re-run on a warm disk is a no-op. Usage: fetch_models.py [--dry-run] [--offline] [VAR ...]   (VAR e.g. LLM_MODEL: only those)
+`.secai-revision` marker, so a re-run on a warm disk is a no-op. Usage: fetch_models.py [--dry-run] [--offline] [--include GLOB ...] [VAR ...]
+(VAR e.g. LLM_MODEL: only those). --include downloads only matching files, without marker or size check: the image build
+uses it to put each weight shard in its own layer, then runs a plain fetch to verify and write the marker.
 """
 import argparse, os, pathlib, sys, time
 from concurrent.futures import ThreadPoolExecutor
@@ -34,13 +36,15 @@ def is_done(model_dir, repo, rev):
     return m.is_file() and m.read_text().strip() == f"{repo}@{rev}"
 
 
-def fetch(model_dir, repo, rev, log=print):
+def fetch(model_dir, repo, rev, log=print, include=None):
     from huggingface_hub import HfApi, snapshot_download
     dest = target(model_dir, repo)
     if is_done(model_dir, repo, rev):
         log(f"{repo}: present ({rev[:12]})"); return dest
     t0 = time.time()
-    snapshot_download(repo, revision=rev, local_dir=str(dest), max_workers=16)
+    snapshot_download(repo, revision=rev, local_dir=str(dest), max_workers=16, allow_patterns=include)
+    if include:
+        log(f"{repo}: {include} in {time.time() - t0:.0f}s"); return dest
     # Size check against the Hub metadata catches truncated files; Xet already verifies chunk hashes.
     info = HfApi().model_info(repo, revision=rev, files_metadata=True)
     bad = [s.rfilename for s in info.siblings if s.size is not None and
@@ -56,6 +60,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dry-run", action="store_true", help="print what would be fetched")
     p.add_argument("--offline", action="store_true", help="only check that every pinned model is already present")
+    p.add_argument("--include", action="append", help="download only files matching this glob (repeatable)")
     p.add_argument("only", nargs="*", help="limit to these env var names (default: all)")
     a = p.parse_args(argv)
     model_dir = os.environ.get("MODEL_DIR", "/workspace/models")
@@ -76,7 +81,7 @@ def main(argv=None):
     t0 = time.time()
     log = lambda msg: print(time.strftime("%H:%M:%S"), msg, flush=True)
     with ThreadPoolExecutor(len(models)) as ex:
-        futs = [ex.submit(fetch, model_dir, repo, rev, log) for _, repo, rev in models]
+        futs = [ex.submit(fetch, model_dir, repo, rev, log, a.include) for _, repo, rev in models]
         errors = [f.exception() for f in futs if f.exception()]
     for e in errors:
         log(f"ERROR {e}")

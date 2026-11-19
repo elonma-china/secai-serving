@@ -18,6 +18,8 @@ EMBED_MODEL="${EMBED_MODEL:-secai1999/Embedding-Autoscan-v1}"
 RERANK_MODEL="${RERANK_MODEL:-secai1999/Rerank-Autoscan-v1}"
 OCR_MODEL="${OCR_MODEL:-secai1999/OCR-Autoscan-v1}"
 MT_MODEL="${MT_MODEL:-secai1999/Translate-Autoscan-v1}"
+BIND_HOST="${BIND_HOST:-0.0.0.0}"   # interface of the public ports (8000/8001/8002/8003/8004/8005); 127.0.0.1 = reachable only via tunnel/reverse proxy
+HEALTH_HOST="$BIND_HOST"; [ "$HEALTH_HOST" != 0.0.0.0 ] || HEALTH_HOST=127.0.0.1
 LLM_MAX_LEN="${LLM_MAX_MODEL_LEN:-131072}"
 LLM_MAX_SEQS="${LLM_MAX_NUM_SEQS:-64}"
 LLM_UTIL_A="${LLM_UTIL_A:-0.90}"      # GPU0: LLM only
@@ -48,7 +50,7 @@ case "$KV_OFFLOAD" in native|tier|lmcache|none) ;; *) echo 'KV_OFFLOAD must be n
 
 CUDAGRAPH_SIZES="1 2 4 8 16 24 32 40 48 56 64 $(seq -s' ' 128 64 512) 1024 2048 4096 8192 12288 16384"
 llm_args() { # port util lmcache_port
-  local a=(serve "$(src "$LLM_MODEL")" --served-model-name "$LLM_MODEL" --host 0.0.0.0 --port "$1" --trust-remote-code
+  local a=(serve "$(src "$LLM_MODEL")" --served-model-name "$LLM_MODEL" --host "$BIND_HOST" --port "$1" --trust-remote-code
     --gpu-memory-utilization "$2" --max-model-len "$LLM_MAX_LEN" --max-num-seqs "$LLM_MAX_SEQS"
     --enable-prefix-caching --enable-auto-tool-choice --tool-call-parser qwen3_coder)
   [ "$LLM_LANGUAGE_ONLY" = 0 ] || a+=(--language-model-only)
@@ -68,9 +70,9 @@ llm_args() { # port util lmcache_port
 }
 mapfile -d '' A_ARGS < <(llm_args 8001 "$LLM_UTIL_A" 5555)
 mapfile -d '' B_ARGS < <(llm_args 8003 "$LLM_UTIL_B" 5556)
-EMBED_ARGS=(serve "$(src "$EMBED_MODEL")" --served-model-name "$EMBED_MODEL" --host 0.0.0.0 --port 8000
+EMBED_ARGS=(serve "$(src "$EMBED_MODEL")" --served-model-name "$EMBED_MODEL" --host "$BIND_HOST" --port 8000
   --runner pooling --dtype float16 --max-model-len 1024 --gpu-memory-utilization 0.04)
-RERANK_ARGS=(serve "$(src "$RERANK_MODEL")" --served-model-name "$RERANK_MODEL" --host 0.0.0.0 --port 8002
+RERANK_ARGS=(serve "$(src "$RERANK_MODEL")" --served-model-name "$RERANK_MODEL" --host "$BIND_HOST" --port 8002
   --runner pooling --hf-overrides "$RERANK_OVERRIDES"
   --chat-template "$ROOT/stack/templates/qwen3_reranker.jinja" --dtype float16 --max-model-len 2048
   --gpu-memory-utilization 0.04)
@@ -136,7 +138,7 @@ start() { # name gpu args...
 }
 healthy() { # name port
   local deadline=$((SECONDS + ${HEALTH_TIMEOUT:-3600}))
-  until curl -fsS "http://127.0.0.1:$2/health" >/dev/null 2>&1; do
+  until curl -fsS "http://$HEALTH_HOST:$2/health" >/dev/null 2>&1; do
     kill -0 "$(cat "$LOG_DIR/$1.pid")" 2>/dev/null || { echo "$1 exited; see $LOG_DIR/$1.log" >&2; return 1; }
     [ "$SECONDS" -lt "$deadline" ] || { echo "$1 health timeout; see $LOG_DIR/$1.log" >&2; return 1; }
     sleep 3
@@ -167,7 +169,7 @@ fi
 
 ensure() { # name gpu port args... ; skip services that are already serving (idempotent re-run)
   local name="$1" gpu="$2" port="$3"; shift 3
-  if curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then echo "$name already healthy"; return; fi
+  if curl -fsS "http://$HEALTH_HOST:$port/health" >/dev/null 2>&1; then echo "$name already healthy"; return; fi
   start "$name" "$gpu" "$@"
 }
 # GPU0 holds only replica A, so it loads and compiles while the GPU1 chain below runs (it used to wait for all four).
@@ -180,7 +182,7 @@ ensure hy-mt 1 18304 "${MT_ARGS[@]}"; healthy hy-mt 18304
 ensure llm-b 1 8003 "${B_ARGS[@]}"
 healthy llm-a 8001; healthy llm-b 8003
 
-listening() { curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$1/" 2>/dev/null; }   # any HTTP answer
+listening() { curl -s -o /dev/null --max-time 2 "http://$HEALTH_HOST:$1/" 2>/dev/null; }   # any HTTP answer
 (umask 077; [ -f "$OCR_TOKEN_FILE" ] || python3 -c 'import secrets;print(secrets.token_urlsafe(32))' >"$OCR_TOKEN_FILE")
 if ! listening 18083; then
   API_KEY="$API_KEY" nohup setsid python3 "$ROOT/stack/ocr_adapter.py" --port 18083 --backend-url http://127.0.0.1:18303 \
@@ -188,10 +190,10 @@ if ! listening 18083; then
   echo "$!" >"$LOG_DIR/ocr-adapter.pid"
 fi
 if ! listening 8004; then
-  API_KEY="$API_KEY" nohup setsid python3 "$ROOT/stack/mt_adapter.py" --port 8004 >"$LOG_DIR/mt-adapter.log" 2>&1 </dev/null &
+  API_KEY="$API_KEY" nohup setsid python3 "$ROOT/stack/mt_adapter.py" --host "$BIND_HOST" --port 8004 >"$LOG_DIR/mt-adapter.log" 2>&1 </dev/null &
   echo "$!" >"$LOG_DIR/mt-adapter.pid"
 fi
-cp "$ROOT/stack/nginx.conf" /etc/nginx/conf.d/secai-llm.conf && nginx -t && { nginx -s reload 2>/dev/null || nginx; }
-healthy llm-a 8005 2>/dev/null || curl -fsS http://127.0.0.1:8005/health >/dev/null
+sed "s/^    listen 8005;/    listen $BIND_HOST:8005;/" "$ROOT/stack/nginx.conf" >/etc/nginx/conf.d/secai-llm.conf && nginx -t && { nginx -s reload 2>/dev/null || nginx; }
+healthy llm-a 8005 2>/dev/null || curl -fsS "http://$HEALTH_HOST:8005/health" >/dev/null
 mark "stack up"
 echo "Stack up. Public: 8005 LLM, 8000 embed, 8002 rerank, 8004 translate. OCR 18083 stays loopback (SSH tunnel)."

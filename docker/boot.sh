@@ -7,19 +7,28 @@
 #      non-zero so a container restart policy takes over.
 # CACHE_SAVE=1 (HF_TOKEN with write access): when no cache bundle matched, publish one once the stack is up. Doing
 # it here, not by hand over ssh, keeps the env (and so the bundle key) identical to the one the stack ran with.
+# CACHE_SEED: a compile-cache seed baked into the image (Dockerfile.warm) is copied into $CACHE_DIR when it is empty.
 # Secrets: API_KEY, or API_KEY_FILE (default /workspace/api.key). HF_TOKEN is optional (needed for the cache bundle
 # if its repo is private).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export LOG_DIR="${LOG_DIR:-/workspace/logs}" MODEL_DIR="${MODEL_DIR:-/workspace/models}" CACHE_DIR="${CACHE_DIR:-/workspace/cache}"
 mkdir -p "$LOG_DIR" "$MODEL_DIR" "$CACHE_DIR"
+# Service logs also go to stdout (prefixed), so `docker logs` / journald / a log shipper see them. Files stay for post-mortems.
+if [ "${LOG_STDOUT:-1}" = 1 ]; then
+  for n in llm-a llm-b embedding reranker ovis-ocr hy-mt mt-adapter ocr-adapter; do
+    (tail -q -n 0 -F "$LOG_DIR/$n.log" 2>/dev/null | sed -u "s/^/[$n] /") &
+  done
+fi
 exec > >(tee -a "$LOG_DIR/boot.log") 2>&1
 log() { echo "$(date +%T) boot: $*"; }
 
 [ -n "${HF_TOKEN:-}" ] || unset HF_TOKEN
 t0=$SECONDS
 if [ "${SKIP_FETCH:-0}" != 1 ]; then python3 "$ROOT/stack/fetch_models.py" & fetch=$!; fi
-if [ "${CACHE_RESTORE:-1}" = 1 ] && [ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ]; then
+if [ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ] && [ -d "${CACHE_SEED:-}" ] && [ -n "$(ls -A "$CACHE_SEED" 2>/dev/null)" ]; then
+  log "seeding compile cache from the image"; cp -a "$CACHE_SEED/." "$CACHE_DIR/"
+elif [ "${CACHE_RESTORE:-1}" = 1 ] && [ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ]; then
   rc=0; python3 "$ROOT/stack/cache_bundle.py" restore || rc=$?
   [ "$rc" = 3 ] && cache_miss=1
   [ "$rc" = 0 ] || [ "$rc" = 3 ] || log "cache restore failed; continuing without it"
@@ -50,11 +59,16 @@ fi
 
 unhealthy() {
   local p
-  for p in 8000 8001 8002 8003 18303 18304; do
+  local h="${BIND_HOST:-0.0.0.0}"; [ "$h" != 0.0.0.0 ] || h=127.0.0.1
+  for p in 8000 8001 8002 8003; do
+    curl -fsS --max-time 10 "http://$h:$p/health" >/dev/null 2>&1 || { echo "$p"; return 0; }
+  done
+  for p in 18303 18304; do
     curl -fsS --max-time 10 "http://127.0.0.1:$p/health" >/dev/null 2>&1 || { echo "$p"; return 0; }
   done
   for p in 8004 18083 8005; do   # adapters / nginx: any HTTP answer counts
-    curl -s -o /dev/null --max-time 10 "http://127.0.0.1:$p/" 2>/dev/null || { echo "$p"; return 0; }
+    local hh="$h"; [ "$p" != 18083 ] || hh=127.0.0.1
+    curl -s -o /dev/null --max-time 10 "http://$hh:$p/" 2>/dev/null || { echo "$p"; return 0; }
   done
   return 1
 }
