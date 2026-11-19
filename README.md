@@ -18,7 +18,7 @@ python3 stack/tests/test_stack.py                          # offline tests (or r
 ```
 
 Needs 2 GPUs of >= 90 GB, >= 142 GiB free host RAM (2x55 GiB KV offload + headroom), `nginx`, and ~160 GB free disk for the NVMe KV tier.
-The model repos under `secai1999/` are private: export `HF_TOKEN` (read access) on every host that starts the stack; `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
+Models are pulled from the public `secai1999/*` repos on Hugging Face; `HF_TOKEN` is optional (higher rate limits). `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
 Clients send `X-Session-Id` so a session stays on one replica and reuses its cached KV.
 
 ## What is optimized
