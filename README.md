@@ -21,34 +21,41 @@ Needs 2 GPUs of >= 90 GB, >= 142 GiB free host RAM (2x55 GiB KV offload + headro
 Models are pulled from the public `secai1999/*` repos on Hugging Face; `HF_TOKEN` is optional (higher rate limits). `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
 Clients send `X-Session-Id` so a session stays on one replica and reuses its cached KV.
 
-## Prebuilt image (fast deploy)
+## Deploy (prebuilt image)
 
-`docker/Dockerfile` = pinned vLLM nightly (`7c3a9302f`, the build measured in BENCHMARKS) + nginx/zstd/hf_xet + this
-`stack/`, with the FP8 prefill patch applied and verified at build time. It adds ~7.5 MB on top of the vLLM image, so a
-host that already has that base pulls almost nothing. Weights and compile caches stay on the `/workspace` volume:
-
-| Boot step (`docker/boot.sh`) | What it removes from the critical path |
-|---|---|
-| `stack/fetch_models.py`: 5 models (~32 GB) in parallel over Xet, pinned in `stack/models.lock`, skipped when present | vLLM pulling each model lazily, one service after another |
-| `stack/cache_bundle.py restore`: torch.compile/Triton/FlashInfer caches from a private HF repo, keyed by vLLM version + GPU + the full `up.sh --dry-run` plan | recompiling every service on a new machine |
-| `up.sh` starts replica A (GPU0) immediately, alongside the GPU1 chain | A waiting for embed/rerank/OCR/MT to finish |
-| watchdog: an unhealthy service for 60 s triggers `down.sh` + `up.sh` (max 3, then exit for the restart policy) | no auto-restart before |
+The image (`docker/Dockerfile`) contains everything: vLLM pinned to the measured build (`7c3a9302f`, by commit tag +
+digest), nginx, this `stack/` with the FP8 prefill patch applied, and **all five models baked in** (`/opt/secai/models`,
+revisions pinned in `stack/models.lock`, one layer per weight shard, below the code layers). A target host only needs
+Docker + the NVIDIA runtime; it never installs packages or downloads models. `/workspace` holds only mutable state
+(logs, compile cache, KV tier, API key).
 
 ```bash
-docker/build.sh [--push]                                   # tag ghcr.io/elonma-china/secai-serving:<sha>-<date> + latest
-# Local/on-prem 2x RTX PRO 6000 (key in $SECAI_WORKSPACE/api.key, chmod 600):
-SECAI_WORKSPACE=/srv/secai-serving docker compose -f docker/compose.yaml up -d
-# Vast.ai (nothing is rented without --yes):
-docker/vast.sh offers; docker/vast.sh create <offer_id> --yes
-docker/vast.sh key <instance_id> ./api.key                 # boot waits for it; models download meanwhile
-docker/vast.sh tunnel <instance_id>                        # 38005/38000/38002/38004/38083 on localhost
-# First boot of a new image/config: add CACHE_SAVE=1 and an HF_TOKEN with write access to publish the cache bundle
-# (it is saved from boot.sh so the key matches the env the stack ran with).
+# 1. on the target host: verify it (GPUs, CUDA >= 13.2, nvidia runtime, RAM, disk, ports, key, image pullable)
+docker/preflight.sh --image ghcr.io/elonma-china/secai-serving:<tag>
+# 2. deploy (key in $SECAI_WORKSPACE/api.key, chmod 600)
+SECAI_SERVING_IMAGE=ghcr.io/elonma-china/secai-serving:<tag> SECAI_WORKSPACE=/srv/secai-serving docker compose -f docker/compose.yaml up -d
+# 3. READY only when every model answers a real request (chat via nginx + both replicas, embedding, rerank, translate, OCR)
+docker exec secai-serving python3 /opt/secai/stack/smoke.py
 ```
+Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
+Roll back by deploying the previous tag; tags are `<git sha>-<date>`, never rely on `latest` in production.
 
-Progress is in `/workspace/logs/boot.log`; per-service ready times in `/workspace/logs/startup-timeline.log`.
-Without the image, `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MODEL_DIR=/workspace/models bash stack/up.sh`
-gives the same parallel fetch on a plain host. `stack/down.sh` stops everything `up.sh` started.
+**Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
+```bash
+docker/build.sh release [--push]            # vLLM + code + models; code-only changes re-push a few MB
+docker/warm.sh <image> cache-seed.tar.zst   # on a 2x PRO 6000 host: cold start, warm every kernel, pack the compile cache
+docker/build.sh warm cache-seed.tar.zst [--push]   # release + cache seed: boot skips recompilation
+```
+What a boot still does (cannot be baked, needs the GPUs): load weights onto the GPUs, capture CUDA graphs, pin 2x55 GiB of
+RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the key -> `up.sh` (replica A starts at once,
+the GPU1 services follow one by one so replica B sizes itself on what is left) -> watchdog (unhealthy 60 s -> `down.sh`
++ `up.sh`, 3 times, then exit so `restart: unless-stopped` takes over). Service logs go to stdout (`docker logs`, prefixed
+`[llm-a]`...) and to `/workspace/logs`; per-service ready times are in `startup-timeline.log`; vLLM serves Prometheus
+`/metrics` on 8000/8001/8002/8003. `BIND_HOST=127.0.0.1` limits the public ports to loopback (tunnel / reverse proxy).
+
+Without Docker: `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MODEL_DIR=/workspace/models bash stack/up.sh`.
+Compile caches can also be shared without the image through `stack/cache_bundle.py` (private HF repo). Not covered: one
+host is a single point of failure, and the API key is the only access control (no TLS) - keep the ports off the internet.
 
 ## What is optimized
 
@@ -71,7 +78,8 @@ Results vs the previous setup (32 concurrent agents, each running a 16-turn tool
 | `VLLM_SM120_FP8_PREFILL` | `1` | `0` skips the attention patch (`python3 stack/patches/sm120_fp8_prefill.py revert` restores the original file) |
 | `LLM_UTIL_A` / `LLM_UTIL_B` | 0.90 / 0.74 | GPU memory fraction; B shares GPU1 with the four aux models |
 | `LLM_BATCHED_TOKENS`, `LLM_MAX_NUM_SEQS`, `LLM_MAX_MODEL_LEN` | 16384, 64, 131072 | |
-| `MODEL_DIR` | empty (image: `/workspace/models`) | serve local copies from `fetch_models.py` under the Hub names, offline |
+| `MODEL_DIR` | empty (image: `/opt/secai/models`) | serve local copies under the Hub names, offline |
+| `BIND_HOST` | `0.0.0.0` | interface of the public ports; `127.0.0.1` = loopback only |
 | `CACHE_DIR` | `/workspace/cache` | torch.compile / Triton / FlashInfer caches (persist across restarts) |
 
 ## Benchmark and test tools (`stack/`)

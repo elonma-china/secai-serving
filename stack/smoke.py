@@ -21,7 +21,7 @@ def png_with_text(text):
     buf = io.BytesIO(); img.save(buf, "PNG"); return buf.getvalue()
 
 
-def checks(host, key, ocr_token):
+def checks(host, key, ocr_token, warm=False):
     u = lambda port, path: f"http://{host}:{port}{path}"
     chat = {"model": LLM, "messages": [{"role": "user", "content": "Reply with the single word: pong"}], "max_tokens": 16, "temperature": 0}
     def llm(port):
@@ -36,6 +36,14 @@ def checks(host, key, ocr_token):
         v = post(u(8000, "/v1/embeddings"), {"model": EMBED, "input": ["secai smoke"]}, key)["data"][0]["embedding"]
         assert len(v) > 100 and any(abs(x) > 0 for x in v), "bad embedding"
         return f"dim={len(v)}"
+    if warm:  # long prompts on each replica compile the lazily-built prefill kernels (FP8 FMHA kicks in at >= 256 query tokens)
+        def long_prompt(port):
+            filler = " ".join(f"record {i} alpha beta gamma delta" for i in range(3000))
+            body = {"model": LLM, "messages": [{"role": "user", "content": filler + "\nSummarize in one word."}], "max_tokens": 8, "temperature": 0}
+            out = post(u(port, "/v1/chat/completions"), body, key, timeout=900)
+            return f"prompt_tokens={out['usage']['prompt_tokens']}"
+        yield "warm: long prompt A :8001", lambda: long_prompt(8001)
+        yield "warm: long prompt B :8003", lambda: long_prompt(8003)
     yield "embedding :8000", embed
     def rerank():
         r = post(u(8002, "/v1/rerank"), {"model": RERANK, "query": "what is the capital of France",
@@ -64,12 +72,13 @@ def main():
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--key-file", default=os.environ.get("API_KEY_FILE", "/workspace/api.key"))
     p.add_argument("--ocr-token-file", default=os.environ.get("OCR_TOKEN_FILE", "/workspace/secai-ovis-ocr.token"))
+    p.add_argument("--warm", action="store_true", help="also send a ~20K-token prompt to each replica (for cache seeding)")
     a = p.parse_args()
     key = os.environ.get("API_KEY") or pathlib.Path(a.key_file).read_text().strip()
     tok = pathlib.Path(a.ocr_token_file)
     ocr_token = tok.read_text().strip() if tok.is_file() else None
     bad = 0
-    for name, fn in checks(a.host, key, ocr_token):
+    for name, fn in checks(a.host, key, ocr_token, a.warm):
         t0 = time.time()
         try:
             detail = fn(); print(f"PASS {name:24s} {time.time() - t0:5.1f}s  {detail}")

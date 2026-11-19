@@ -1,13 +1,11 @@
 # Local / on-prem host with 2x RTX PRO 6000 (NVIDIA driver with CUDA >= 13.2, nvidia-container-toolkit):
 #   docker compose -f docker/compose.yaml up -d
-# Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). Models and compile caches persist in $SECAI_WORKSPACE, so
-# only the first start downloads (~32 GB) and compiles; later starts load from local disk.
+# Run docker/preflight.sh first. Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). The image already contains the
+# models; $SECAI_WORKSPACE keeps logs, the compile cache and the NVMe KV tier. Pin SECAI_SERVING_IMAGE to a tag in production.
 services:
   serving:
+    container_name: secai-serving
     image: ${SECAI_SERVING_IMAGE:-ghcr.io/elonma-china/secai-serving:latest}
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
     init: true
     restart: unless-stopped
     network_mode: host        # same port layout as a bare host: 8005/8000/8002/8004 public, OCR 18083 loopback only
@@ -15,7 +13,7 @@ services:
     ulimits:
       memlock: -1
     environment:
-      HF_TOKEN: ${HF_TOKEN:-}
+      BIND_HOST: ${BIND_HOST:-0.0.0.0}
     volumes:
       - ${SECAI_WORKSPACE:-/srv/secai-serving}:/workspace
     deploy:
@@ -30,3 +28,6 @@ services:
       interval: 30s
       timeout: 10s
       start_period: 40m
+    logging:
+      driver: json-file
+      options: {max-size: 50m, max-file: "5"}
