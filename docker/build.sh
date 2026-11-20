@@ -29,6 +29,10 @@ esac
 echo "built $final"
 if [ "${1:-}" = --push ]; then
   [ -z "$dirty" ] || { echo "refusing to push a dirty build; commit first" >&2; exit 1; }
-  docker push "$final" && docker push "$REPO:latest"
+  # Two separate commands: `a && b` would hide a failure from set -e. If the push stops with "NotFound: content digest
+  # sha256:...", that base-image layer has no compressed blob in the local containerd store (it was unpacked from another
+  # image); copy it from the public registry first: docker/seed_blob.py <digest> vllm/vllm-openai elonma-china/secai-serving
+  docker push "$final"
+  docker push "$REPO:latest"
   docker image inspect "$final" --format '{{index .RepoDigests 0}}'
 fi
