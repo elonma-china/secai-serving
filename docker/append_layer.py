@@ -5,7 +5,7 @@ model layers, a change to them is just a new top layer: this tool builds that la
 the registry (like `crane append`), and tags the result. Nothing else is touched; the base image and its tag stay valid for rollback.
 
   append_layer.py --base repo@sha256:... --tag NEW_TAG --revision GITSHA \\
-      --add stack=/opt/secai/stack --add cache-seed-dir=/opt/secai/cache-seed [--dry-run]
+      --add /path/stack=/opt/secai/stack --add /path/seed=/opt/secai/cache-seed --keep-mtime [--dry-run]
 
 --add LOCAL=DEST adds a file or a whole directory (mode bits and exec flags kept, owner root, fixed mtime). Files override the same paths of lower
 layers. The package must already exist and the GitHub token (`gh auth token`, scope write:packages) never gets printed.
@@ -21,8 +21,9 @@ def sha(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def build_layer(adds, mtime=0):
-    """(gzipped layer bytes, diff_id) for [(local_path, dest_path)]; deterministic for equal inputs."""
+def build_layer(adds, mtime=0, keep_mtime=False):
+    """(gzipped layer bytes, diff_id) for [(local_path, dest_path)]; deterministic for equal inputs.
+    keep_mtime keeps each file's real mtime instead of a fixed one (compile caches: ninja/Triton may compare timestamps)."""
     raw = io.BytesIO()
     seen_dirs = set()
     with tarfile.open(fileobj=raw, mode="w", format=tarfile.GNU_FORMAT) as tar:
@@ -37,7 +38,8 @@ def build_layer(adds, mtime=0):
         def add_file(path, name):
             add_dir(str(pathlib.PurePosixPath(name).parent))
             ti = tarfile.TarInfo(name); data = path.read_bytes()
-            ti.size = len(data); ti.mode = 0o755 if os.access(path, os.X_OK) else 0o644; ti.mtime = mtime
+            ti.size = len(data); ti.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+            ti.mtime = int(path.stat().st_mtime) if keep_mtime else mtime
             tar.addfile(ti, io.BytesIO(data))
         for local, dest in adds:
             local = pathlib.Path(local); dest = dest.strip("/")
@@ -109,11 +111,12 @@ def main(argv=None):
     p.add_argument("--base", required=True, help="repo@sha256:digest of the image to extend, e.g. ghcr.io/elonma-china/secai-serving@sha256:...")
     p.add_argument("--tag", required=True); p.add_argument("--revision", default="")
     p.add_argument("--add", action="append", required=True, metavar="LOCAL=DEST"); p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--keep-mtime", action="store_true", help="keep real file mtimes (use for compile-cache seeds)")
     a = p.parse_args(argv)
     host_repo, _, digest = a.base.partition("@")
     host, _, repo = host_repo.partition("/")
     adds = [tuple(x.split("=", 1)) for x in a.add]
-    layer, diff_id = build_layer(adds)
+    layer, diff_id = build_layer(adds, keep_mtime=a.keep_mtime)
     print(f"layer: {len(layer) / 1e6:.1f} MB gzip, {sum(1 for _ in adds)} --add, diff_id {diff_id[:19]}")
     if a.dry_run:
         return 0

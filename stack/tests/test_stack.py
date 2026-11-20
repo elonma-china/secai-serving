@@ -377,6 +377,10 @@ def test_append_layer_builds_a_deterministic_layer_and_a_consistent_config():
         assert not any("pycache" in n for n in names)
         assert names["opt/secai/stack/run.sh"].mode == 0o755 and names["opt/secai/stack/a.py"].mode == 0o644
         assert all(m.uid == 0 and m.mtime == 0 for m in names.values())
+        os_utime = __import__("os").utime; os_utime(src / "a.py", (1_700_000_000, 1_700_000_000))
+        gz3, _ = al.build_layer([(str(src), "/opt/secai/stack")], keep_mtime=True)
+        with tarfile.open(fileobj=io.BytesIO(gzip.decompress(gz3))) as tar:
+            assert tar.getmember("opt/secai/stack/a.py").mtime == 1_700_000_000
     base = {"rootfs": {"diff_ids": ["sha256:aa"]}, "history": [{"created_by": "x"}],
             "config": {"Env": ["SECAI_IMAGE_REVISION=old", "A=1"], "Labels": {"org.opencontainers.image.revision": "old"}}}
     new = al.new_config(base, "sha256:bb", "abc1234", "tag")
