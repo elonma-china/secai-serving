@@ -1,0 +1,24 @@
+{
+ "startup_parallel": {
+  "agents": 32,
+  "completed": 32,
+  "correct": 32,
+  "errors": 0,
+  "turns_total": 512,
+  "prompt_tokens_total": 29428665,
+  "output_tokens_total": 17689,
+  "run_wall_s": 389.05422282218933,
+  "output_tok_per_s": 45.466670099824256,
+  "ttft_s": {
+   "p50": 9.545496225357056,
+   "p95": 36.44446015357971,
+   "max": 75.27675342559814
+  },
+  "agent_wall_s": {
+   "p50": 303.70844769477844,
+   "max": 385.9646649360657
+  },
+  "prefix_cache_hit_ratio": 0.417,
+  "external_prefix_hit_ratio": 0.719
+ }
+}

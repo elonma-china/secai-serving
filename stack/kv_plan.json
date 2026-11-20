@@ -1,0 +1,30 @@
+{
+ "note": "learned on 2x RTX PRO 6000 WS, vLLM 0.34.0rc1.dev776 (image cbe8629), serial cold start",
+ "key": "7b845325397ff54cc136",
+ "margin": 0.99,
+ "kv": {
+  "llm-a": {
+   "blocks": 926,
+   "gib": 48.04
+  },
+  "llm-b": {
+   "blocks": 632,
+   "gib": 32.8
+  },
+  "embedding": {
+   "none": true
+  },
+  "reranker": {
+   "blocks": 288,
+   "gib": 1.97
+  },
+  "ovis-ocr": {
+   "blocks": 970,
+   "gib": 6.4
+  },
+  "hy-mt": {
+   "blocks": 432,
+   "gib": 1.69
+  }
+ }
+}

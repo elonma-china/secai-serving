@@ -263,6 +263,132 @@ def test_release_env_pins_a_digest_and_compose_requires_an_image():
     assert "latest" not in (ROOT / "docker/deploy.sh").read_text().split("set -euo")[1]
 
 
+kvp = load("kv_plan")
+SAMPLE_LOG = ("(EngineCore pid=1) INFO 11-20 02:39:56 [extensible_kv_cache.py:693] Memory after warmup: 7.0 GiB free, 0.06 GiB committed\n"
+              "\x1b[32m(EngineCore pid=1) INFO 11-20 02:39:57 [extensible_kv_cache.py:537] Extended KV cache to 1000 blocks (10.00 GiB).\x1b[0m\n"
+              "(EngineCore pid=1) INFO 11-20 03:00:00 [extensible_kv_cache.py:537] Extended KV cache to 2000 blocks (44.90 GiB).\n")
+
+
+def _plan(tmp, **gib):
+    plan = {"kv": {n: {"blocks": 1, "gib": g} for n, g in gib.items()}}
+    f = Path(tmp) / "plan.json"; f.write_text(json.dumps(plan)); return f
+
+
+def test_kv_plan_parses_the_last_extended_line_and_keeps_a_margin():
+    assert kvp.parse_log(SAMPLE_LOG.replace("\x1b[32m", "").replace("\x1b[0m", "")) == (2000, 44.9)
+    assert kvp.parse_log("nothing here") is None
+    assert kvp.kv_bytes({"kv": {"x": {"gib": 10.0}}}, "x") == int(10.0 * 0.99 * (1 << 30))
+
+
+def test_kv_plan_services_without_kv_get_no_flag():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "embedding.log").write_text("INFO Application startup complete.\n")   # started, no KV line: encoder model
+        (Path(tmp) / "reranker.log").write_text("INFO Loading weights\n")                    # never finished starting
+        plan, missing = kvp.learn(tmp, ("embedding", "reranker"))
+        assert plan == {"embedding": {"none": True}} and missing == ["reranker"]
+        assert kvp.kv_bytes({"kv": plan}, "embedding") is None
+        f = _plan(tmp, **{"reranker": 1.0, "ovis-ocr": 6.0, "hy-mt": 2.0, "llm-b": 44.0})
+        d = json.loads(f.read_text()); d["kv"]["embedding"] = {"none": True}; f.write_text(json.dumps(d))
+        out = dry(STARTUP="parallel_aux", KV_PLAN=str(f))
+        assert out.count("--kv-cache-memory-bytes") == 3 and "Embedding-Autoscan-v1 --served-model-name" in out
+
+
+def test_kv_plan_learn_reads_service_logs_and_reports_missing():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "hy-mt.log").write_text(SAMPLE_LOG)  # includes ANSI colour codes
+        plan, missing = kvp.learn(tmp, ("hy-mt", "llm-b"))
+        assert plan == {"hy-mt": {"blocks": 2000, "gib": 44.9}} and missing == ["llm-b"]
+        out = subprocess.run([sys.executable, str(ROOT / "stack/kv_plan.py"), "learn", "--logs", tmp, "--out", str(Path(tmp) / "o.json")],
+                             capture_output=True, text=True)
+        assert out.returncode == 1 and "llm-b" in out.stderr
+
+
+def test_startup_modes_fix_kv_only_where_the_order_no_longer_protects_it():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = _plan(tmp, **{"embedding": 1.0, "reranker": 1.0, "ovis-ocr": 6.0, "hy-mt": 2.0, "llm-b": 44.0})
+        assert "kv-cache-memory-bytes" not in dry()                                        # no matching plan: auto falls back to serial
+        aux = dry(STARTUP="parallel_aux", KV_PLAN=str(plan))
+        assert aux.count("--kv-cache-memory-bytes") == 4 and "46772193853" not in aux      # llm-b still measures
+        par = dry(STARTUP="parallel", KV_PLAN=str(plan))
+        assert par.count("--kv-cache-memory-bytes") == 5 and "46772193853" in par
+
+
+def test_auto_goes_parallel_only_when_the_plan_matches_this_configuration():
+    import os, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        f = _plan(tmp, **{"embedding": 1.0, "reranker": 1.0, "ovis-ocr": 6.0, "hy-mt": 2.0, "llm-b": 44.0})
+        d = json.loads(f.read_text()); d["kv"]["embedding"] = {"none": True}
+        def run(env):
+            out = subprocess.run(["bash", str(ROOT / "stack/up.sh"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "KV_PLAN": str(f), **env})
+            return out.stdout, out.stderr
+        f.write_text(json.dumps(d))                                      # no fingerprint
+        so, se = run({}); assert "--kv-cache-memory-bytes" not in so and "-> serial" in se and "fingerprint" in se
+        d["key"] = kvp.config_key(); f.write_text(json.dumps(d))        # learned on exactly this configuration
+        so, se = run({}); assert so.count("--kv-cache-memory-bytes") == 4 and "-> parallel" in se   # embedding has no KV cache
+        so, se = run({"LLM_UTIL_B": "0.70"}); assert "--kv-cache-memory-bytes" not in so and "different configuration" in se   # a setting changed
+        so, se = run({"STARTUP": "serial"}); assert "--kv-cache-memory-bytes" not in so and "STARTUP=auto" not in se          # explicit choice wins
+
+
+def test_parallel_start_refuses_without_a_kv_plan_instead_of_guessing():
+    import os
+    out = subprocess.run(["bash", str(ROOT / "stack/up.sh"), "--dry-run"], capture_output=True, text=True,
+                         env={**os.environ, "STARTUP": "parallel", "KV_PLAN": "/nonexistent/plan.json"})
+    assert out.returncode == 1 and "no fixed KV size" in out.stderr
+    bad = subprocess.run(["bash", str(ROOT / "stack/up.sh"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "STARTUP": "fast"})
+    assert bad.returncode == 2
+
+
+def test_kv_plan_check_rejects_missing_and_unfingerprinted_plans():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        for body in (None, "{}", '{"kv": {}}'):
+            f = Path(tmp) / "p.json"
+            f.unlink(missing_ok=True)
+            if body is not None: f.write_text(body)
+            assert subprocess.run([sys.executable, str(ROOT / "stack/kv_plan.py"), "check", "--plan", str(f)], capture_output=True).returncode == 1
+
+
+def test_up_sh_starts_every_service_before_waiting_in_parallel_modes():
+    src = (ROOT / "stack/up.sh").read_text()
+    par = src.split("  parallel)")[1].split(";;\nesac")[0]
+    assert par.index("ensure llm-b") < par.index("healthy embedding")            # all six launched before the first wait
+    aux = src.split("  parallel_aux)")[1].split("  parallel)")[0]
+    assert aux.index("healthy hy-mt") < aux.index("ensure llm-b")                  # llm-b waits for the aux services
+
+
+def test_append_layer_builds_a_deterministic_layer_and_a_consistent_config():
+    import gzip, hashlib, importlib.util, io, tarfile, tempfile
+    spec = importlib.util.spec_from_file_location("append_layer", ROOT / "docker" / "append_layer.py")
+    al = importlib.util.module_from_spec(spec); spec.loader.exec_module(al)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "stack"; (src / "sub").mkdir(parents=True); (src / "__pycache__").mkdir()
+        (src / "a.py").write_text("x = 1\n"); (src / "run.sh").write_text("#!/bin/sh\n"); (src / "run.sh").chmod(0o755)
+        (src / "sub" / "b.txt").write_text("b"); (src / "__pycache__" / "a.pyc").write_bytes(b"junk")
+        gz1, diff1 = al.build_layer([(str(src), "/opt/secai/stack")]); gz2, diff2 = al.build_layer([(str(src), "/opt/secai/stack")])
+        assert gz1 == gz2 and diff1 == diff2                                     # same input -> same digests
+        raw = gzip.decompress(gz1)
+        assert diff1 == "sha256:" + hashlib.sha256(raw).hexdigest()               # diff_id is the uncompressed tar digest
+        with tarfile.open(fileobj=io.BytesIO(raw)) as tar:
+            names = {m.name: m for m in tar.getmembers()}
+        assert "opt/secai/stack/a.py" in names and "opt/secai/stack/sub/b.txt" in names and "opt/secai/stack" in names
+        assert not any("pycache" in n for n in names)
+        assert names["opt/secai/stack/run.sh"].mode == 0o755 and names["opt/secai/stack/a.py"].mode == 0o644
+        assert all(m.uid == 0 and m.mtime == 0 for m in names.values())
+        os_utime = __import__("os").utime; os_utime(src / "a.py", (1_700_000_000, 1_700_000_000))
+        gz3, _ = al.build_layer([(str(src), "/opt/secai/stack")], keep_mtime=True)
+        with tarfile.open(fileobj=io.BytesIO(gzip.decompress(gz3))) as tar:
+            assert tar.getmember("opt/secai/stack/a.py").mtime == 1_700_000_000
+    base = {"rootfs": {"diff_ids": ["sha256:aa"]}, "history": [{"created_by": "x"}],
+            "config": {"Env": ["SECAI_IMAGE_REVISION=old", "A=1"], "Labels": {"org.opencontainers.image.revision": "old"}}}
+    new = al.new_config(base, "sha256:bb", "abc1234", "tag")
+    assert new["rootfs"]["diff_ids"] == ["sha256:aa", "sha256:bb"] and len(new["history"]) == 2
+    assert new["config"]["Env"] == ["A=1", "SECAI_IMAGE_REVISION=abc1234"] and new["config"]["Labels"]["org.opencontainers.image.revision"] == "abc1234"
+    assert base["rootfs"]["diff_ids"] == ["sha256:aa"]                              # the base config is not mutated
+
+
 def test_shell_scripts_parse():
     for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh"):
         subprocess.run(["bash", "-n", str(ROOT / s)], check=True)

@@ -43,17 +43,19 @@ translate, OCR). It prints `DEPLOYED` only if every model answered. `--check-onl
 `--workspace DIR`, `--image REF`, `--timeout SEC`, `--no-smoke` are available.
 
 Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
-Released image: `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
+Released image: `ghcr.io/elonma-china/secai-serving:2fe2825-20261120-warm` (code of this repo + a compile-cache seed; starts in 118 s on a fresh 2x RTX PRO 6000 host) (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
 
 **Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
 ```bash
 docker/build.sh release [--push]            # vLLM + code + models; code-only changes re-push a few MB
 docker/warm.sh <image> cache-seed.tar.zst   # on a 2x PRO 6000 host: cold start, warm every kernel, pack the compile cache
 docker/build.sh warm cache-seed.tar.zst [--push]   # release + cache seed: boot skips recompilation
+# Code / seed change only (no local 36 GB pull): one extra layer straight on the registry image, tag + digest printed, then update docker/release.env
+python3 docker/append_layer.py --base <repo@digest> --tag <sha>-<date>-warm --revision <sha> --add <dir>/stack=/opt/secai/stack --add <seed dir>=/opt/secai/cache-seed --keep-mtime
 ```
 What a boot still does (cannot be baked, needs the GPUs): load weights onto the GPUs, capture CUDA graphs, pin 2x55 GiB of
-RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the key -> `up.sh` (replica A starts at once,
-the GPU1 services follow one by one so replica B sizes itself on what is left) -> watchdog (unhealthy 60 s -> `down.sh`
+RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the key -> `up.sh` (all six vLLM services start at once with a fixed
+KV size per service from `stack/kv_plan.json`; `STARTUP=serial` restores the one-by-one start) -> watchdog (unhealthy 60 s -> `down.sh`
 + `up.sh`, 3 times, then exit so `restart: unless-stopped` takes over). Service logs go to stdout (`docker logs`, prefixed
 `[llm-a]`...) and to `/workspace/logs`; per-service ready times are in `startup-timeline.log`; vLLM serves Prometheus
 `/metrics` on 8000/8001/8002/8003. `BIND_HOST=127.0.0.1` limits the public ports to loopback (tunnel / reverse proxy).
@@ -85,6 +87,7 @@ Results vs the previous setup (32 concurrent agents, each running a 16-turn tool
 | `LLM_BATCHED_TOKENS`, `LLM_MAX_NUM_SEQS`, `LLM_MAX_MODEL_LEN` | 16384, 64, 131072 | |
 | `MODEL_DIR` | empty (image: `/opt/secai/models`) | serve local copies under the Hub names, offline |
 | `BIND_HOST` | `0.0.0.0` | interface of the public ports; `127.0.0.1` = loopback only |
+| `STARTUP` | `auto` | `auto` = all services start at once when `stack/kv_plan.json` matches this configuration (else serial); `serial`, `parallel_aux`, `parallel` force a mode. Cold start 516 s -> 135-144 s, warm 177 s -> 74-81 s: [stack/benchmarks/STARTUP.md](stack/benchmarks/STARTUP.md) |
 | `CACHE_DIR` | `/workspace/cache` | torch.compile / Triton / FlashInfer caches (persist across restarts) |
 
 ## Benchmark and test tools (`stack/`)

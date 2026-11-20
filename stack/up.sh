@@ -4,6 +4,10 @@
 #   GPU1: LLM replica B :8003 + embedding :8000 + rerank :8002
 #         + OvisOCR3 (loopback :18303 -> adapter :18083) + Hy-MT2 (loopback :18304 -> adapter :8004)
 #   nginx :8005 -> A/B with session affinity (prefix-cache locality).
+# STARTUP=auto (default) | serial | parallel_aux | parallel: auto = parallel when stack/kv_plan.json was learned on this exact configuration
+#   (same GPU, vLLM and launch settings), otherwise serial. serial: serial starts the GPU1 services one after another (each sizes its KV cache from
+#   the memory it measures, which needs the others to be done). parallel_aux starts llm-a and the four auxiliary services at once,
+#   then llm-b; parallel starts all six at once. Both use a fixed KV size per service (stack/kv_plan.py, --kv-cache-memory-bytes).
 # KV offload per LLM replica: KV_OFFLOAD=native|tier|lmcache|none (default tier).
 #   tier = vLLM TieringOffloadingSpec: pinned host RAM (KV_OFFLOAD_GIB) + NVMe fs tier (KV_FS_DIR, capped by KV_FS_MAX_GIB via kv_gc.sh).
 set -euo pipefail
@@ -18,6 +22,12 @@ EMBED_MODEL="${EMBED_MODEL:-secai1999/Embedding-Autoscan-v1}"
 RERANK_MODEL="${RERANK_MODEL:-secai1999/Rerank-Autoscan-v1}"
 OCR_MODEL="${OCR_MODEL:-secai1999/OCR-Autoscan-v1}"
 MT_MODEL="${MT_MODEL:-secai1999/Translate-Autoscan-v1}"
+STARTUP="${STARTUP:-auto}"; KV_PLAN="${KV_PLAN:-$ROOT/stack/kv_plan.json}"
+case "$STARTUP" in auto|serial|parallel_aux|parallel) ;; *) echo 'STARTUP must be auto, serial, parallel_aux or parallel' >&2; exit 2;; esac
+if [ "$STARTUP" = auto ]; then
+  if reason=$(python3 "$ROOT/stack/kv_plan.py" check --plan "$KV_PLAN" 2>&1); then STARTUP=parallel; echo "up.sh: STARTUP=auto -> parallel (KV plan matches this configuration)" >&2
+  else STARTUP=serial; echo "up.sh: STARTUP=auto -> serial ($reason)" >&2; fi
+fi
 BIND_HOST="${BIND_HOST:-0.0.0.0}"   # interface of the public ports (8000/8001/8002/8003/8004/8005); 127.0.0.1 = reachable only via tunnel/reverse proxy
 HEALTH_HOST="$BIND_HOST"; [ "$HEALTH_HOST" != 0.0.0.0 ] || HEALTH_HOST=127.0.0.1
 LLM_MAX_LEN="${LLM_MAX_MODEL_LEN:-131072}"
@@ -83,6 +93,15 @@ OCR_ARGS=(serve "$(src "$OCR_MODEL")" --served-model-name "$OCR_MODEL" --host 12
   --default-chat-template-kwargs '{"enable_thinking":false}')
 MT_ARGS=(serve "$(src "$MT_MODEL")" --served-model-name "$MT_MODEL" --host 127.0.0.1 --port 18304
   --gpu-memory-utilization 0.05 --max-model-len 8192 --max-num-seqs 32)
+fix_kv() { # array_name service: append the fixed KV size (parallel modes only; fails if the plan has no entry)
+  local -n arr="$1"; local bytes
+  bytes=$(python3 "$ROOT/stack/kv_plan.py" arg "$2" --plan "$KV_PLAN") || exit 1
+  [ -z "$bytes" ] || arr+=(--kv-cache-memory-bytes "$bytes")   # empty = the service has no KV cache (embedding)
+}
+if [ "$STARTUP" != serial ]; then
+  fix_kv EMBED_ARGS embedding; fix_kv RERANK_ARGS reranker; fix_kv OCR_ARGS ovis-ocr; fix_kv MT_ARGS hy-mt
+  [ "$STARTUP" != parallel ] || fix_kv B_ARGS llm-b
+fi
 OCR_PROMPT_ARGS=()
 [ -z "$MODEL_DIR" ] || OCR_PROMPT_ARGS=(--prompt-file "$(src "$OCR_MODEL")/prompts/plain_ocr.txt")
 
@@ -172,14 +191,28 @@ ensure() { # name gpu port args... ; skip services that are already serving (ide
   if curl -fsS "http://$HEALTH_HOST:$port/health" >/dev/null 2>&1; then echo "$name already healthy"; return; fi
   start "$name" "$gpu" "$@"
 }
-# GPU0 holds only replica A, so it loads and compiles while the GPU1 chain below runs (it used to wait for all four).
+# GPU0 holds only replica A, so it loads and compiles while the GPU1 services start.
 ensure llm-a 0 8001 "${A_ARGS[@]}"
-# GPU1: small aux models first, one at a time, so their memory is claimed before replica B profiles its budget.
-ensure embedding 1 8000 "${EMBED_ARGS[@]}"; healthy embedding 8000
-ensure reranker 1 8002 "${RERANK_ARGS[@]}"; healthy reranker 8002
-ensure ovis-ocr 1 18303 "${OCR_ARGS[@]}"; healthy ovis-ocr 18303
-ensure hy-mt 1 18304 "${MT_ARGS[@]}"; healthy hy-mt 18304
-ensure llm-b 1 8003 "${B_ARGS[@]}"
+case "$STARTUP" in
+  serial)
+    # GPU1: small aux models first, one at a time, so their memory is claimed before replica B profiles its budget.
+    ensure embedding 1 8000 "${EMBED_ARGS[@]}"; healthy embedding 8000
+    ensure reranker 1 8002 "${RERANK_ARGS[@]}"; healthy reranker 8002
+    ensure ovis-ocr 1 18303 "${OCR_ARGS[@]}"; healthy ovis-ocr 18303
+    ensure hy-mt 1 18304 "${MT_ARGS[@]}"; healthy hy-mt 18304
+    ensure llm-b 1 8003 "${B_ARGS[@]}";;
+  parallel_aux)
+    # Fixed KV sizes: the four aux services no longer depend on each other. llm-b still waits, so it measures after them.
+    ensure embedding 1 8000 "${EMBED_ARGS[@]}"; ensure reranker 1 8002 "${RERANK_ARGS[@]}"
+    ensure ovis-ocr 1 18303 "${OCR_ARGS[@]}"; ensure hy-mt 1 18304 "${MT_ARGS[@]}"
+    healthy embedding 8000; healthy reranker 8002; healthy ovis-ocr 18303; healthy hy-mt 18304
+    ensure llm-b 1 8003 "${B_ARGS[@]}";;
+  parallel)
+    ensure embedding 1 8000 "${EMBED_ARGS[@]}"; ensure reranker 1 8002 "${RERANK_ARGS[@]}"
+    ensure ovis-ocr 1 18303 "${OCR_ARGS[@]}"; ensure hy-mt 1 18304 "${MT_ARGS[@]}"
+    ensure llm-b 1 8003 "${B_ARGS[@]}"
+    healthy embedding 8000; healthy reranker 8002; healthy ovis-ocr 18303; healthy hy-mt 18304;;
+esac
 healthy llm-a 8001; healthy llm-b 8003
 
 listening() { curl -s -o /dev/null --max-time 2 "http://$HEALTH_HOST:$1/" 2>/dev/null; }   # any HTTP answer
