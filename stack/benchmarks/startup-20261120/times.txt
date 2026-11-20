@@ -1,0 +1,187 @@
+S_cold START 2026-11-20T04:05:06Z
+S_cold port=8000 t=55s
+S_cold port=8002 t=144s
+S_cold port=8001 t=148s
+S_cold port=18303 t=288s
+S_cold port=18304 t=434s
+S_cold port=8003 t=513s
+S_cold port=8005 t=515s
+S_cold port=8004 t=515s
+S_cold port=18083 t=515s
+S_cold ALL_UP t=515s
+S_cold SMOKE rc=0 took=1s
+S_cold READY t=516s
+S_warm START 2026-11-20T04:13:48Z
+S_warm port=8000 t=24s
+S_warm port=8002 t=43s
+S_warm port=18303 t=73s
+S_warm port=8001 t=75s
+S_warm port=8005 t=77s
+S_warm port=18304 t=102s
+S_warm port=8003 t=174s
+S_warm port=8004 t=176s
+S_warm port=18083 t=176s
+S_warm ALL_UP t=176s
+S_warm SMOKE rc=0 took=1s
+S_warm READY t=177s
+PA_cold START 2026-11-20T04:16:52Z
+PA_cold port=8000 t=35s
+PA_cold port=8002 t=43s
+PA_cold port=18304 t=73s
+PA_cold port=18303 t=90s
+PA_cold port=8001 t=130s
+PA_cold port=8005 t=130s
+PA_cold port=8003 t=160s
+PA_cold port=8004 t=165s
+PA_cold port=18083 t=165s
+PA_cold ALL_UP t=165s
+PA_cold SMOKE rc=0 took=0s
+PA_cold READY t=165s
+PA_warm START 2026-11-20T04:19:46Z
+PA_warm port=8002 t=20s
+PA_warm port=8000 t=24s
+PA_warm port=18303 t=30s
+PA_warm port=18304 t=32s
+PA_warm port=8001 t=73s
+PA_warm port=8005 t=73s
+PA_warm port=8003 t=105s
+PA_warm port=8004 t=107s
+PA_warm port=18083 t=107s
+PA_warm ALL_UP t=107s
+PA_warm SMOKE rc=0 took=1s
+PA_warm READY t=108s
+P_cold START 2026-11-20T04:21:40Z
+P_cold port=8000 t=35s
+P_cold port=8002 t=43s
+P_cold port=18304 t=74s
+P_cold port=18303 t=90s
+P_cold port=8003 t=120s
+P_cold port=8005 t=120s
+P_cold port=8001 t=133s
+P_cold port=8004 t=135s
+P_cold port=18083 t=135s
+P_cold ALL_UP t=135s
+P_cold SMOKE rc=0 took=0s
+P_cold READY t=135s
+P_warm START 2026-11-20T04:24:02Z
+P_warm port=8002 t=20s
+P_warm port=8000 t=24s
+P_warm port=18303 t=28s
+P_warm port=18304 t=30s
+P_warm port=8003 t=71s
+P_warm port=8005 t=71s
+P_warm port=8001 t=73s
+P_warm port=8004 t=73s
+P_warm port=18083 t=73s
+P_warm ALL_UP t=73s
+P_warm SMOKE rc=0 took=1s
+P_warm READY t=74s
+EXP_DONE 04:25:16
+P_cold_r1 START 2026-11-20T04:47:45Z
+P_cold_r1 port=8000 t=35s
+P_cold_r1 port=8002 t=45s
+P_cold_r1 port=18304 t=74s
+P_cold_r1 port=18303 t=92s
+P_cold_r1 port=8003 t=120s
+P_cold_r1 port=8001 t=132s
+P_cold_r1 port=8005 t=134s
+P_cold_r1 port=8004 t=134s
+P_cold_r1 port=18083 t=134s
+P_cold_r1 ALL_UP t=134s
+P_cold_r1 SMOKE rc=0 took=1s
+P_cold_r1 READY t=135s
+P_cold_r2 START 2026-11-20T04:50:09Z
+P_cold_r2 port=8000 t=35s
+P_cold_r2 port=8002 t=43s
+P_cold_r2 port=18304 t=73s
+P_cold_r2 port=18303 t=92s
+P_cold_r2 port=8003 t=120s
+P_cold_r2 port=8005 t=120s
+P_cold_r2 port=8001 t=132s
+P_cold_r2 port=8004 t=134s
+P_cold_r2 port=18083 t=134s
+P_cold_r2 ALL_UP t=134s
+P_cold_r2 SMOKE rc=0 took=1s
+P_cold_r2 READY t=135s
+P_cold_r3 START 2026-11-20T04:52:32Z
+P_cold_r3 port=8000 t=35s
+P_cold_r3 port=8002 t=43s
+P_cold_r3 port=18304 t=74s
+P_cold_r3 port=18303 t=90s
+P_cold_r3 port=8003 t=123s
+P_cold_r3 port=8005 t=123s
+P_cold_r3 port=8001 t=135s
+P_cold_r3 port=8004 t=137s
+P_cold_r3 port=18083 t=137s
+P_cold_r3 ALL_UP t=137s
+P_cold_r3 SMOKE rc=0 took=1s
+P_cold_r3 READY t=138s
+P_warm_r1 START 2026-11-20T04:54:58Z
+P_warm_r1 port=8002 t=23s
+P_warm_r1 port=8000 t=27s
+P_warm_r1 port=18303 t=31s
+P_warm_r1 port=18304 t=33s
+P_warm_r1 port=8003 t=76s
+P_warm_r1 port=8005 t=76s
+P_warm_r1 port=8001 t=78s
+P_warm_r1 port=8004 t=80s
+P_warm_r1 port=18083 t=80s
+P_warm_r1 ALL_UP t=80s
+P_warm_r1 SMOKE rc=0 took=1s
+P_warm_r1 READY t=81s
+P_warm_r2 START 2026-11-20T04:56:25Z
+P_warm_r2 port=8002 t=23s
+P_warm_r2 port=8000 t=27s
+P_warm_r2 port=18303 t=31s
+P_warm_r2 port=18304 t=33s
+P_warm_r2 port=8003 t=76s
+P_warm_r2 port=8005 t=76s
+P_warm_r2 port=8001 t=78s
+P_warm_r2 port=8004 t=80s
+P_warm_r2 port=18083 t=80s
+P_warm_r2 ALL_UP t=80s
+P_warm_r2 SMOKE rc=0 took=1s
+P_warm_r2 READY t=81s
+REPEAT_DONE 04:57:46
+AUTO_cold START 2026-11-20T04:59:42Z
+AUTO_cold port=8000 t=37s
+AUTO_cold port=8002 t=47s
+AUTO_cold port=18304 t=78s
+AUTO_cold port=18303 t=96s
+AUTO_cold port=8003 t=127s
+AUTO_cold port=8001 t=141s
+AUTO_cold port=8005 t=143s
+AUTO_cold port=8004 t=143s
+AUTO_cold port=18083 t=143s
+AUTO_cold ALL_UP t=143s
+AUTO_cold SMOKE rc=0 took=1s
+AUTO_cold READY t=144s
+WD KILL llm-b pgid=65563 2026-11-20T05:02:06Z
+WD killed t=0s
+WD watchdog_restart_begins t=62s
+WD port=8002 t=91s
+WD port=8000 t=95s
+WD port=18303 t=101s
+WD port=18304 t=103s
+WD port=8003 t=146s
+WD port=8005 t=146s
+WD port=8001 t=148s
+WD port=8004 t=150s
+WD port=18083 t=150s
+WD all_up t=152s
+WD READY t=153s
+SEED rc=0 12M
+AUTO_seed START 2026-11-20T05:04:52Z
+AUTO_seed port=8002 t=23s
+AUTO_seed port=8000 t=27s
+AUTO_seed port=18303 t=31s
+AUTO_seed port=18304 t=33s
+AUTO_seed port=8001 t=78s
+AUTO_seed port=8003 t=78s
+AUTO_seed port=8005 t=78s
+AUTO_seed port=8004 t=80s
+AUTO_seed port=18083 t=80s
+AUTO_seed ALL_UP t=80s
+AUTO_seed SMOKE rc=0 took=1s
+AUTO_seed READY t=81s
+FINAL_DONE 05:06:13

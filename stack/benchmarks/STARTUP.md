@@ -2,7 +2,7 @@
 
 Same Vast.ai host as the deployment benchmark (2x RTX PRO 6000 WS, machine 15336), image `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` with the
 `stack/` of this change copied over it. READY = every port healthy and `stack/smoke.py` passes (one real request per model). Times are seconds from the
-start command, polled every 2 s (`startup-20261120/times.log`). "Cold" = compile caches wiped; "warm" = caches kept from the previous run of the same mode.
+start command, polled every 2 s (`startup-20261120/times.txt`). "Cold" = compile caches wiped; "warm" = caches kept from the previous run of the same mode.
 
 ## Why the GPU1 services started one after another, and what changed
 
