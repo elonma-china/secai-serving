@@ -49,6 +49,12 @@ memory fractions, context length, models) re-learn: run `STARTUP=serial`, then `
 - Compile-cache seed (`stack/make_seed.sh`, 12 MB zstd / 178 MB, 2,859 files) copied to `/opt/secai/cache-seed`, cache dir empty: `boot.sh` logged
   "seeding compile cache from the image", `auto -> parallel`, READY after 81 s, i.e. a cold machine starts like a warm one. The seed matches only this
   image's configuration and GPU model.
-- Image load on a host that already cached the layers: 46 s (655 s on a host that had none).
+- **The released image, end to end** (`ghcr.io/elonma-china/secai-serving:2fe2825-20261120-warm`, digest `sha256:00b9b4842a4d...`, the previous image plus one 26.5 MB
+  layer with this code and the seed; its `up.sh`, `kv_plan.py`, `kv_plan.json` and `smoke.py` were checked identical to the repo by sha256): a fresh Vast
+  instance, empty `/workspace`, only an API key, no environment variables, `boot.sh` as shipped: "seeding compile cache from the image", `auto -> parallel`,
+  READY after **118 s** (embedding 45, rerank 78, OCR 102, translation/llm-a/llm-b 117 s), smoke 7/7. It is slower than the 81 s above because it is the first
+  read of the 32 GB of weights from disk (page cache cold). Against the old flow's 553 s on the same machine that is -79%.
+- Image load on a host that already cached the layers: 46-49 s (655 s on a host that had none). The release is a registry-side extra layer
+  (`docker/append_layer.py`), so only 26.5 MB were pushed and nothing was pulled locally.
 
 Limits: one host class; the plan and seed are specific to RTX PRO 6000 WS + vLLM `7c3a9302f` (the image pins both); `kv_check.py` still INCONCLUSIVE (not re-run).

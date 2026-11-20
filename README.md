@@ -43,13 +43,15 @@ translate, OCR). It prints `DEPLOYED` only if every model answered. `--check-onl
 `--workspace DIR`, `--image REF`, `--timeout SEC`, `--no-smoke` are available.
 
 Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
-Released image: `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
+Released image: `ghcr.io/elonma-china/secai-serving:2fe2825-20261120-warm` (code of this repo + a compile-cache seed; starts in 118 s on a fresh 2x RTX PRO 6000 host) (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
 
 **Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
 ```bash
 docker/build.sh release [--push]            # vLLM + code + models; code-only changes re-push a few MB
 docker/warm.sh <image> cache-seed.tar.zst   # on a 2x PRO 6000 host: cold start, warm every kernel, pack the compile cache
 docker/build.sh warm cache-seed.tar.zst [--push]   # release + cache seed: boot skips recompilation
+# Code / seed change only (no local 36 GB pull): one extra layer straight on the registry image, tag + digest printed, then update docker/release.env
+python3 docker/append_layer.py --base <repo@digest> --tag <sha>-<date>-warm --revision <sha> --add <dir>/stack=/opt/secai/stack --add <seed dir>=/opt/secai/cache-seed --keep-mtime
 ```
 What a boot still does (cannot be baked, needs the GPUs): load weights onto the GPUs, capture CUDA graphs, pin 2x55 GiB of
 RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the key -> `up.sh` (all six vLLM services start at once with a fixed
