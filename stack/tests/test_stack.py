@@ -263,6 +263,62 @@ def test_release_env_pins_a_digest_and_compose_requires_an_image():
     assert "latest" not in (ROOT / "docker/deploy.sh").read_text().split("set -euo")[1]
 
 
+kvp = load("kv_plan")
+SAMPLE_LOG = ("(EngineCore pid=1) INFO 11-20 02:39:56 [extensible_kv_cache.py:693] Memory after warmup: 7.0 GiB free, 0.06 GiB committed\n"
+              "\x1b[32m(EngineCore pid=1) INFO 11-20 02:39:57 [extensible_kv_cache.py:537] Extended KV cache to 1000 blocks (10.00 GiB).\x1b[0m\n"
+              "(EngineCore pid=1) INFO 11-20 03:00:00 [extensible_kv_cache.py:537] Extended KV cache to 2000 blocks (44.90 GiB).\n")
+
+
+def _plan(tmp, **gib):
+    plan = {"kv": {n: {"blocks": 1, "gib": g} for n, g in gib.items()}}
+    f = Path(tmp) / "plan.json"; f.write_text(json.dumps(plan)); return f
+
+
+def test_kv_plan_parses_the_last_extended_line_and_keeps_a_margin():
+    assert kvp.parse_log(SAMPLE_LOG.replace("\x1b[32m", "").replace("\x1b[0m", "")) == (2000, 44.9)
+    assert kvp.parse_log("nothing here") is None
+    assert kvp.kv_bytes({"kv": {"x": {"gib": 10.0}}}, "x") == int(10.0 * 0.99 * (1 << 30))
+
+
+def test_kv_plan_learn_reads_service_logs_and_reports_missing():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "hy-mt.log").write_text(SAMPLE_LOG)  # includes ANSI colour codes
+        plan, missing = kvp.learn(tmp, ("hy-mt", "llm-b"))
+        assert plan == {"hy-mt": {"blocks": 2000, "gib": 44.9}} and missing == ["llm-b"]
+        out = subprocess.run([sys.executable, str(ROOT / "stack/kv_plan.py"), "learn", "--logs", tmp, "--out", str(Path(tmp) / "o.json")],
+                             capture_output=True, text=True)
+        assert out.returncode == 1 and "llm-b" in out.stderr
+
+
+def test_startup_modes_fix_kv_only_where_the_order_no_longer_protects_it():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = _plan(tmp, **{"embedding": 1.0, "reranker": 1.0, "ovis-ocr": 6.0, "hy-mt": 2.0, "llm-b": 44.0})
+        assert "kv-cache-memory-bytes" not in dry()                                        # serial default: measured, as before
+        aux = dry(STARTUP="parallel_aux", KV_PLAN=str(plan))
+        assert aux.count("--kv-cache-memory-bytes") == 4 and "46772193853" not in aux      # llm-b still measures
+        par = dry(STARTUP="parallel", KV_PLAN=str(plan))
+        assert par.count("--kv-cache-memory-bytes") == 5 and "46772193853" in par
+
+
+def test_parallel_start_refuses_without_a_kv_plan_instead_of_guessing():
+    import os
+    out = subprocess.run(["bash", str(ROOT / "stack/up.sh"), "--dry-run"], capture_output=True, text=True,
+                         env={**os.environ, "STARTUP": "parallel", "KV_PLAN": "/nonexistent/plan.json"})
+    assert out.returncode == 1 and "no fixed KV size" in out.stderr
+    bad = subprocess.run(["bash", str(ROOT / "stack/up.sh"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "STARTUP": "fast"})
+    assert bad.returncode == 2
+
+
+def test_up_sh_starts_every_service_before_waiting_in_parallel_modes():
+    src = (ROOT / "stack/up.sh").read_text()
+    par = src.split("  parallel)")[1].split(";;\nesac")[0]
+    assert par.index("ensure llm-b") < par.index("healthy embedding")            # all six launched before the first wait
+    aux = src.split("  parallel_aux)")[1].split("  parallel)")[0]
+    assert aux.index("healthy hy-mt") < aux.index("ensure llm-b")                  # llm-b waits for the aux services
+
+
 def test_shell_scripts_parse():
     for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh"):
         subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
