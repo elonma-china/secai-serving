@@ -4,7 +4,8 @@
 #   GPU1: LLM replica B :8003 + embedding :8000 + rerank :8002
 #         + OvisOCR3 (loopback :18303 -> adapter :18083) + Hy-MT2 (loopback :18304 -> adapter :8004)
 #   nginx :8005 -> A/B with session affinity (prefix-cache locality).
-# STARTUP=serial (default) | parallel_aux | parallel: serial starts the GPU1 services one after another (each sizes its KV cache from
+# STARTUP=auto (default) | serial | parallel_aux | parallel: auto = parallel when stack/kv_plan.json was learned on this exact configuration
+#   (same GPU, vLLM and launch settings), otherwise serial. serial: serial starts the GPU1 services one after another (each sizes its KV cache from
 #   the memory it measures, which needs the others to be done). parallel_aux starts llm-a and the four auxiliary services at once,
 #   then llm-b; parallel starts all six at once. Both use a fixed KV size per service (stack/kv_plan.py, --kv-cache-memory-bytes).
 # KV offload per LLM replica: KV_OFFLOAD=native|tier|lmcache|none (default tier).
@@ -21,8 +22,12 @@ EMBED_MODEL="${EMBED_MODEL:-secai1999/Embedding-Autoscan-v1}"
 RERANK_MODEL="${RERANK_MODEL:-secai1999/Rerank-Autoscan-v1}"
 OCR_MODEL="${OCR_MODEL:-secai1999/OCR-Autoscan-v1}"
 MT_MODEL="${MT_MODEL:-secai1999/Translate-Autoscan-v1}"
-STARTUP="${STARTUP:-serial}"; KV_PLAN="${KV_PLAN:-$ROOT/stack/kv_plan.json}"
-case "$STARTUP" in serial|parallel_aux|parallel) ;; *) echo 'STARTUP must be serial, parallel_aux or parallel' >&2; exit 2;; esac
+STARTUP="${STARTUP:-auto}"; KV_PLAN="${KV_PLAN:-$ROOT/stack/kv_plan.json}"
+case "$STARTUP" in auto|serial|parallel_aux|parallel) ;; *) echo 'STARTUP must be auto, serial, parallel_aux or parallel' >&2; exit 2;; esac
+if [ "$STARTUP" = auto ]; then
+  if reason=$(python3 "$ROOT/stack/kv_plan.py" check --plan "$KV_PLAN" 2>&1); then STARTUP=parallel; echo "up.sh: STARTUP=auto -> parallel (KV plan matches this configuration)" >&2
+  else STARTUP=serial; echo "up.sh: STARTUP=auto -> serial ($reason)" >&2; fi
+fi
 BIND_HOST="${BIND_HOST:-0.0.0.0}"   # interface of the public ports (8000/8001/8002/8003/8004/8005); 127.0.0.1 = reachable only via tunnel/reverse proxy
 HEALTH_HOST="$BIND_HOST"; [ "$HEALTH_HOST" != 0.0.0.0 ] || HEALTH_HOST=127.0.0.1
 LLM_MAX_LEN="${LLM_MAX_MODEL_LEN:-131072}"
@@ -91,7 +96,7 @@ MT_ARGS=(serve "$(src "$MT_MODEL")" --served-model-name "$MT_MODEL" --host 127.0
 fix_kv() { # array_name service: append the fixed KV size (parallel modes only; fails if the plan has no entry)
   local -n arr="$1"; local bytes
   bytes=$(python3 "$ROOT/stack/kv_plan.py" arg "$2" --plan "$KV_PLAN") || exit 1
-  arr+=(--kv-cache-memory-bytes "$bytes")
+  [ -z "$bytes" ] || arr+=(--kv-cache-memory-bytes "$bytes")   # empty = the service has no KV cache (embedding)
 }
 if [ "$STARTUP" != serial ]; then
   fix_kv EMBED_ARGS embedding; fix_kv RERANK_ARGS reranker; fix_kv OCR_ARGS ovis-ocr; fix_kv MT_ARGS hy-mt
