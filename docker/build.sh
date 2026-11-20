@@ -34,5 +34,7 @@ if [ "${1:-}" = --push ]; then
   # image); copy it from the public registry first: docker/seed_blob.py <digest> vllm/vllm-openai elonma-china/secai-serving
   docker push "$final"
   docker push "$REPO:latest"
-  docker image inspect "$final" --format '{{index .RepoDigests 0}}'
+  digest=$(docker image inspect "$final" --format '{{index .RepoDigests 0}}'); digest=${digest#*@}
+  echo "pushed. Put this in docker/release.env, commit it, then deploy with docker/deploy.sh:"
+  echo "SECAI_SERVING_TAG=${final#*:}"; echo "SECAI_SERVING_DIGEST=$digest"
 fi

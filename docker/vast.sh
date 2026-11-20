@@ -6,7 +6,9 @@
 #   docker/vast.sh tunnel <instance_id>           # local 38005/38000/38002/38004/38083 -> instance ports
 # The API key never goes into the instance env (visible in the Vast UI); boot.sh downloads models while it waits.
 set -euo pipefail
-IMAGE="${SECAI_SERVING_IMAGE:-ghcr.io/elonma-china/secai-serving:latest}"
+# shellcheck disable=SC1091
+. "$(dirname "$0")/release.env"
+IMAGE="${SECAI_SERVING_IMAGE:-$SECAI_SERVING_REPO@$SECAI_SERVING_DIGEST}"   # public package: no registry login needed
 GPU_NAME="${GPU_NAME:-RTX_PRO_6000_WS}"   # also e.g. RTX_PRO_6000_S (server edition)
 DISK_GB="${DISK_GB:-250}"   # 32 GB models + 2x80 GiB NVMe KV tier + compile cache + logs
 ONSTART='mkdir -p /workspace/logs; env | grep -E "^(HF_TOKEN|SECAI_|KV_|LLM_|CACHE_|MODEL_DIR)" >/workspace/.boot-env 2>/dev/null; chmod 600 /workspace/.boot-env; (set -a; . /workspace/.boot-env; set +a; nohup /opt/secai/docker/boot.sh >/dev/null 2>&1 &)'

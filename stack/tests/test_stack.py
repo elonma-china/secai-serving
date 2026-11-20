@@ -190,8 +190,81 @@ def test_fetch_include_patterns_are_repeatable():
     assert out.returncode == 0 and out.stdout.count("\n") == 1
 
 
+def _fake_host(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887", smoke_rc=0):
+    """Fake docker/nvidia-smi/free/df/ss on PATH so deploy.sh can be driven end to end without a GPU or a registry."""
+    import os, stat
+    bindir, log = Path(tmp) / "bin", Path(tmp) / "calls.log"
+    bindir.mkdir()
+    def tool(name, body):
+        f = bindir / name; f.write_text("#!/usr/bin/env bash\n" + body); f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    tool("nvidia-smi", f'''case "$*" in
+  *name,memory.total*) printf '%s\\n' "{gpu}" "{gpu}";;
+  *memory.used*) printf '0\\n0\\n';;
+  *) echo "| NVIDIA-SMI 595.00   Driver Version: 595.00   CUDA Version: 13.2 |";; esac\n''')
+    tool("free", 'echo "Mem: 500 10 400 0 90 400"')
+    tool("df", 'echo Avail; echo 2000G')
+    tool("ss", "exit 0")
+    tool("docker", f'''echo "$*" >> {log}
+case "$1 $2" in
+  "info -f") echo /var/lib/docker;; "info "*|"info") echo "Runtimes: nvidia runc";;
+  "compose version"|"manifest inspect"|"compose -f"|"pull "*) ;;
+esac
+[ "$1" = info ] && [ -z "$2" ] && echo "Runtimes: nvidia runc"
+[ "$1" = image ] && echo cbe8629
+[ "$1" = inspect ] && echo running
+[ "$1" = exec ] && [[ "$*" == *smoke.py* ]] && {{ echo READY; exit {smoke_rc}; }}
+exit 0\n''')
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}, log
+
+
+def _deploy(tmp, *args, **kw):
+    env, log = _fake_host(tmp, **kw)
+    out = subprocess.run(["bash", str(ROOT / "docker/deploy.sh"), "--workspace", str(Path(tmp) / "ws"), "--generate-key", *args],
+                         capture_output=True, text=True, env=env, timeout=120)
+    calls = log.read_text().splitlines() if log.exists() else []
+    return out, calls
+
+
+def test_deploy_pulls_then_starts_then_smokes_on_a_good_host():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp)
+        assert out.returncode == 0, out.stdout + out.stderr
+        pull = next(i for i, c in enumerate(calls) if c.startswith("pull "))
+        up = next(i for i, c in enumerate(calls) if " up -d" in c)
+        smoke = next(i for i, c in enumerate(calls) if "smoke.py" in c)
+        assert pull < up < smoke and "DEPLOYED" in out.stdout and "@sha256:" in calls[pull]
+        key = Path(tmp) / "ws/api.key"
+        assert key.read_text().strip() not in out.stdout and oct(key.stat().st_mode & 0o777) == "0o600"
+
+
+def test_deploy_refuses_before_pulling_when_the_machine_is_not_suitable():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, gpu="NVIDIA GeForce RTX 4090, 24564")
+        assert out.returncode == 1 and "Not deploying" in out.stderr and "FAIL  need exactly 2x RTX PRO 6000" in out.stdout
+        assert not any(c.startswith("pull ") or " up -d" in c for c in calls)
+
+
+def test_deploy_check_only_never_pulls_and_failed_smoke_is_not_ready():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, "--check-only")
+        assert out.returncode == 0 and "machine is ready" in out.stdout and not any(c.startswith("pull ") for c in calls)
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, smoke_rc=1)
+        assert out.returncode == 1 and "NOT READY" in out.stderr and "DEPLOYED" not in out.stdout
+
+
+def test_release_env_pins_a_digest_and_compose_requires_an_image():
+    env = dict(l.split("=", 1) for l in (ROOT / "docker/release.env").read_text().splitlines() if l and not l.startswith("#"))
+    assert env["SECAI_SERVING_REPO"] == "ghcr.io/elonma-china/secai-serving" and len(env["SECAI_SERVING_DIGEST"]) == 71
+    assert "SECAI_SERVING_IMAGE:?" in (ROOT / "docker/compose.yaml").read_text()
+    assert "latest" not in (ROOT / "docker/deploy.sh").read_text().split("set -euo")[1]
+
+
 def test_shell_scripts_parse():
-    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh"):
+    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh"):
         subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
 
 

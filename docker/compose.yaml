@@ -1,11 +1,11 @@
-# Local / on-prem host with 2x RTX PRO 6000 (NVIDIA driver with CUDA >= 13.2, nvidia-container-toolkit):
-#   docker compose -f docker/compose.yaml up -d
-# Run docker/preflight.sh first. Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). The image already contains the
-# models; $SECAI_WORKSPACE keeps logs, the compile cache and the NVMe KV tier. Pin SECAI_SERVING_IMAGE to a tag in production.
+# Normally started by docker/deploy.sh (checks the machine, pulls the pinned image, starts, waits for READY). By hand:
+#   SECAI_SERVING_IMAGE=<repo@digest from docker/release.env> docker compose -f docker/compose.yaml up -d
+# Host: 2x RTX PRO 6000 (NVIDIA driver with CUDA >= 13.2, nvidia-container-toolkit); run docker/preflight.sh first. Put the API key in $SECAI_WORKSPACE/api.key (chmod 600). The image already contains the
+# models; $SECAI_WORKSPACE keeps logs, the compile cache and the NVMe KV tier.
 services:
   serving:
     container_name: secai-serving
-    image: ${SECAI_SERVING_IMAGE:-ghcr.io/elonma-china/secai-serving:latest}
+    image: ${SECAI_SERVING_IMAGE:?use docker/deploy.sh, or set SECAI_SERVING_IMAGE to repo@digest from docker/release.env}
     init: true
     restart: unless-stopped
     network_mode: host        # same port layout as a bare host: 8005/8000/8002/8004 public, OCR 18083 loopback only

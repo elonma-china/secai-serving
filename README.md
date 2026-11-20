@@ -29,16 +29,21 @@ revisions pinned in `stack/models.lock`, one layer per weight shard, below the c
 Docker + the NVIDIA runtime; it never installs packages or downloads models. `/workspace` holds only mutable state
 (logs, compile cache, KV tier, API key).
 
+Run this **on the 2x RTX PRO 6000 host** (the check refuses any other machine before pulling anything):
 ```bash
-# 1. on the target host: verify it (GPUs, CUDA >= 13.2, nvidia runtime, RAM, disk, ports, key, image pullable)
-docker/preflight.sh --image ghcr.io/elonma-china/secai-serving:<tag>
-# 2. deploy (key in $SECAI_WORKSPACE/api.key, chmod 600)
-SECAI_SERVING_IMAGE=ghcr.io/elonma-china/secai-serving:<tag> SECAI_WORKSPACE=/srv/secai-serving docker compose -f docker/compose.yaml up -d
-# 3. READY only when every model answers a real request (chat via nginx + both replicas, embedding, rerank, translate, OCR)
-docker exec secai-serving python3 /opt/secai/stack/smoke.py
+git clone https://github.com/elonma-china/secai-serving && cd secai-serving
+docker/deploy.sh --generate-key          # creates /srv/secai-serving/api.key (mode 600) if missing; never printed
 ```
+`docker/deploy.sh` does, in order: (1) `docker/preflight.sh` - exactly 2x RTX PRO 6000 >= 90 GB, both idle, driver CUDA >= 13.2,
+nvidia container runtime, >= 142 GiB free RAM, disk (110 GB image + 250 GB workspace; summed if they share a filesystem), free
+ports, key mode, image pullable. Any FAIL prints a fix and the script exits **without pulling**; (2) `docker pull` of the image
+pinned by digest in `docker/release.env` (public package, no login); (3) `docker compose up -d` and wait for health;
+(4) `stack/smoke.py` inside the container: one real request per model (chat via nginx + both replicas, embedding, rerank,
+translate, OCR). It prints `DEPLOYED` only if every model answered. `--check-only` runs step 1 alone; `--down` stops the stack;
+`--workspace DIR`, `--image REF`, `--timeout SEC`, `--no-smoke` are available.
+
 Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
-Roll back by deploying the previous tag; tags are `<git sha>-<date>`, never rely on `latest` in production.
+Released image: `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
 
 **Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
 ```bash
