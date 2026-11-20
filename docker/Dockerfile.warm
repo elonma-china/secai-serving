@@ -1,0 +1,5 @@
+# Release image + compile-cache seed generated on a real 2x RTX PRO 6000 (torch.compile/AOT, Triton, FlashInfer).
+# Built by `docker/build.sh warm <seed.tar.zst>`; boot.sh copies the seed into $CACHE_DIR when that is empty.
+ARG BASE
+FROM ${BASE}
+COPY cache-seed/ /opt/secai/cache-seed/

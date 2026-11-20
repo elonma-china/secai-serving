@@ -119,10 +119,11 @@ def make_handler(token: str, backend_url: str):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8004)
     parser.add_argument("--backend-url", default="http://127.0.0.1:18304")
     args = parser.parse_args()
-    ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(os.environ["API_KEY"], args.backend_url)).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), make_handler(os.environ["API_KEY"], args.backend_url)).serve_forever()
 
 
 if __name__ == "__main__":

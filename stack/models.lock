@@ -1,0 +1,7 @@
+# Pinned model revisions (Hugging Face commit SHAs). fetch_models.py downloads exactly these into $MODEL_DIR/<repo name>.
+# env var              repo                                 revision
+LLM_MODEL       secai1999/LLM-Autoscan-v1        5b8154d71faddf6f4d9db7533cc317a1d3469b10
+EMBED_MODEL     secai1999/Embedding-Autoscan-v1  333f1ebdd7a3f9ea7e2419100d001fe320888fc5
+RERANK_MODEL    secai1999/Rerank-Autoscan-v1     50e623a491e0f5299b73a1556638f39060ec542e
+OCR_MODEL       secai1999/OCR-Autoscan-v1        d84803ae66b582d3cb90a9efdcedd693c58e19ff
+MT_MODEL        secai1999/Translate-Autoscan-v1  cae033abed6c9a80e2d420c1288abc2f48035cfa

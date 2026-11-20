@@ -21,6 +21,47 @@ Needs 2 GPUs of >= 90 GB, >= 142 GiB free host RAM (2x55 GiB KV offload + headro
 Models are pulled from the public `secai1999/*` repos on Hugging Face; `HF_TOKEN` is optional (higher rate limits). `ocr_adapter.py` also downloads its prompt from `secai1999/OCR-Autoscan-v1` at startup.
 Clients send `X-Session-Id` so a session stays on one replica and reuses its cached KV.
 
+## Deploy (prebuilt image)
+
+The image (`docker/Dockerfile`) contains everything: vLLM pinned to the measured build (`7c3a9302f`, by commit tag +
+digest), nginx, this `stack/` with the FP8 prefill patch applied, and **all five models baked in** (`/opt/secai/models`,
+revisions pinned in `stack/models.lock`, one layer per weight shard, below the code layers). A target host only needs
+Docker + the NVIDIA runtime; it never installs packages or downloads models. `/workspace` holds only mutable state
+(logs, compile cache, KV tier, API key).
+
+Run this **on the 2x RTX PRO 6000 host** (the check refuses any other machine before pulling anything):
+```bash
+git clone https://github.com/elonma-china/secai-serving && cd secai-serving
+docker/deploy.sh --generate-key          # creates /srv/secai-serving/api.key (mode 600) if missing; never printed
+```
+`docker/deploy.sh` does, in order: (1) `docker/preflight.sh` - exactly 2x RTX PRO 6000 >= 90 GB, both idle, driver CUDA >= 13.2,
+nvidia container runtime, >= 142 GiB free RAM, disk (110 GB image + 250 GB workspace; summed if they share a filesystem), free
+ports, key mode, image pullable. Any FAIL prints a fix and the script exits **without pulling**; (2) `docker pull` of the image
+pinned by digest in `docker/release.env` (public package, no login); (3) `docker compose up -d` and wait for health;
+(4) `stack/smoke.py` inside the container: one real request per model (chat via nginx + both replicas, embedding, rerank,
+translate, OCR). It prints `DEPLOYED` only if every model answered. `--check-only` runs step 1 alone; `--down` stops the stack;
+`--workspace DIR`, `--image REF`, `--timeout SEC`, `--no-smoke` are available.
+
+Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
+Released image: `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
+
+**Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
+```bash
+docker/build.sh release [--push]            # vLLM + code + models; code-only changes re-push a few MB
+docker/warm.sh <image> cache-seed.tar.zst   # on a 2x PRO 6000 host: cold start, warm every kernel, pack the compile cache
+docker/build.sh warm cache-seed.tar.zst [--push]   # release + cache seed: boot skips recompilation
+```
+What a boot still does (cannot be baked, needs the GPUs): load weights onto the GPUs, capture CUDA graphs, pin 2x55 GiB of
+RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the key -> `up.sh` (replica A starts at once,
+the GPU1 services follow one by one so replica B sizes itself on what is left) -> watchdog (unhealthy 60 s -> `down.sh`
++ `up.sh`, 3 times, then exit so `restart: unless-stopped` takes over). Service logs go to stdout (`docker logs`, prefixed
+`[llm-a]`...) and to `/workspace/logs`; per-service ready times are in `startup-timeline.log`; vLLM serves Prometheus
+`/metrics` on 8000/8001/8002/8003. `BIND_HOST=127.0.0.1` limits the public ports to loopback (tunnel / reverse proxy).
+
+Without Docker: `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MODEL_DIR=/workspace/models bash stack/up.sh`.
+Compile caches can also be shared without the image through `stack/cache_bundle.py` (private HF repo). Not covered: one
+host is a single point of failure, and the API key is the only access control (no TLS) - keep the ports off the internet.
+
 ## What is optimized
 
 - **KV offload**: GPU -> pinned RAM (55 GiB/replica) -> NVMe (`TieringOffloadingSpec`, trimmed to 80 GiB/replica by `kv_gc.sh`).
@@ -42,6 +83,9 @@ Results vs the previous setup (32 concurrent agents, each running a 16-turn tool
 | `VLLM_SM120_FP8_PREFILL` | `1` | `0` skips the attention patch (`python3 stack/patches/sm120_fp8_prefill.py revert` restores the original file) |
 | `LLM_UTIL_A` / `LLM_UTIL_B` | 0.90 / 0.74 | GPU memory fraction; B shares GPU1 with the four aux models |
 | `LLM_BATCHED_TOKENS`, `LLM_MAX_NUM_SEQS`, `LLM_MAX_MODEL_LEN` | 16384, 64, 131072 | |
+| `MODEL_DIR` | empty (image: `/opt/secai/models`) | serve local copies under the Hub names, offline |
+| `BIND_HOST` | `0.0.0.0` | interface of the public ports; `127.0.0.1` = loopback only |
+| `CACHE_DIR` | `/workspace/cache` | torch.compile / Triton / FlashInfer caches (persist across restarts) |
 
 ## Benchmark and test tools (`stack/`)
 

@@ -127,6 +127,147 @@ def test_gateway_protocol_end_to_end():
         srv.shutdown(); fake.shutdown()
 
 
+def test_dry_run_local_model_dir_keeps_served_names():
+    out = dry(MODEL_DIR="/models")
+    for repo in ("LLM", "Embedding", "Rerank", "OCR", "Translate"):
+        name = f"secai1999/{repo}-Autoscan-v1"
+        assert f"serve /models/{repo}-Autoscan-v1 --served-model-name {name}" in out, name
+    assert "--prompt-file /models/OCR-Autoscan-v1/prompts/plain_ocr.txt" in out
+    hub = dry()  # without MODEL_DIR the Hub names are served directly
+    assert "serve secai1999/LLM-Autoscan-v1 --served-model-name secai1999/LLM-Autoscan-v1" in hub and "--prompt-file" not in hub
+
+
+def test_replica_a_starts_before_the_gpu1_chain():
+    src = (ROOT / "stack/up.sh").read_text()
+    a, emb, b = (src.index(f"ensure {n} ") for n in ("llm-a", "embedding", "llm-b"))
+    assert a < emb < b
+
+
+fm = load("fetch_models")
+
+
+def test_models_lock_pins_every_model():
+    lock = fm.load_lock(env={})
+    assert [v for v, _, _ in lock] == ["LLM_MODEL", "EMBED_MODEL", "RERANK_MODEL", "OCR_MODEL", "MT_MODEL"]
+    assert all(r.startswith("secai1999/") and len(rev) == 40 for _, r, rev in lock)
+    up = (ROOT / "stack/up.sh").read_text()
+    assert all(f'{v}:-{r}}}' in up for v, r, _ in lock)  # up.sh defaults == lock file
+    over = dict((v, (r, rev)) for v, r, rev in fm.load_lock(env={"MT_MODEL": "x/y", "MT_MODEL_REVISION": "abc"}))
+    assert over["MT_MODEL"] == ("x/y", "abc") and over["LLM_MODEL"][1] == lock[0][2]
+
+
+def test_fetch_marker_and_offline_check(tmp_path=None):
+    import os, tempfile
+    d = Path(tmp_path or tempfile.mkdtemp())
+    repo, rev = "secai1999/LLM-Autoscan-v1", "a" * 40
+    assert not fm.is_done(d, repo, rev)
+    (d / "LLM-Autoscan-v1").mkdir(parents=True)
+    (d / "LLM-Autoscan-v1" / fm.MARKER).write_text(f"{repo}@{rev}\n")
+    assert fm.is_done(d, repo, rev) and not fm.is_done(d, repo, "b" * 40)
+    out = subprocess.run([sys.executable, str(ROOT / "stack/fetch_models.py"), "--offline"], capture_output=True,
+                         text=True, env={**os.environ, "MODEL_DIR": str(d)})
+    assert out.returncode == 1 and "missing:" in out.stdout
+
+
+def test_bind_host_limits_public_ports():
+    out = dry(BIND_HOST="127.0.0.1")
+    assert "0.0.0.0" not in out and out.count("--host 127.0.0.1") == 6
+    assert "--host 0.0.0.0" in dry() and "--host 127.0.0.1" in dry()
+
+
+def test_dockerfile_bakes_every_model_with_shard_layers():
+    df = (ROOT / "docker/Dockerfile").read_text()
+    assert df.index("fetch_models.py LLM_MODEL --include") < df.index("COPY stack /opt/secai/stack")  # models below code
+    for i in range(1, 6):
+        assert f"model-0000{i}-of-00005.safetensors" in df
+    assert "EMBED_MODEL RERANK_MODEL OCR_MODEL MT_MODEL" in df and "fetch_models.py --offline" in df
+    assert "HF_HUB_OFFLINE" not in df.split("ARG GIT_SHA")[1]  # cache_bundle restore needs the Hub
+
+
+def test_fetch_include_patterns_are_repeatable():
+    import argparse
+    out = subprocess.run([sys.executable, str(ROOT / "stack/fetch_models.py"), "--dry-run", "LLM_MODEL"], capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.count("\n") == 1
+
+
+def _fake_host(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887", smoke_rc=0):
+    """Fake docker/nvidia-smi/free/df/ss on PATH so deploy.sh can be driven end to end without a GPU or a registry."""
+    import os, stat
+    bindir, log = Path(tmp) / "bin", Path(tmp) / "calls.log"
+    bindir.mkdir()
+    def tool(name, body):
+        f = bindir / name; f.write_text("#!/usr/bin/env bash\n" + body); f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    tool("nvidia-smi", f'''case "$*" in
+  *name,memory.total*) printf '%s\\n' "{gpu}" "{gpu}";;
+  *memory.used*) printf '0\\n0\\n';;
+  *) echo "| NVIDIA-SMI 595.00   Driver Version: 595.00   CUDA Version: 13.2 |";; esac\n''')
+    tool("free", 'echo "Mem: 500 10 400 0 90 400"')
+    tool("df", 'echo Avail; echo 2000G')
+    tool("ss", "exit 0")
+    tool("docker", f'''echo "$*" >> {log}
+case "$1 $2" in
+  "info -f") echo /var/lib/docker;; "info "*|"info") echo "Runtimes: nvidia runc";;
+  "compose version"|"manifest inspect"|"compose -f"|"pull "*) ;;
+esac
+[ "$1" = info ] && [ -z "$2" ] && echo "Runtimes: nvidia runc"
+[ "$1" = image ] && echo cbe8629
+[ "$1" = inspect ] && echo running
+[ "$1" = exec ] && [[ "$*" == *smoke.py* ]] && {{ echo READY; exit {smoke_rc}; }}
+exit 0\n''')
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}"}, log
+
+
+def _deploy(tmp, *args, **kw):
+    env, log = _fake_host(tmp, **kw)
+    out = subprocess.run(["bash", str(ROOT / "docker/deploy.sh"), "--workspace", str(Path(tmp) / "ws"), "--generate-key", *args],
+                         capture_output=True, text=True, env=env, timeout=120)
+    calls = log.read_text().splitlines() if log.exists() else []
+    return out, calls
+
+
+def test_deploy_pulls_then_starts_then_smokes_on_a_good_host():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp)
+        assert out.returncode == 0, out.stdout + out.stderr
+        pull = next(i for i, c in enumerate(calls) if c.startswith("pull "))
+        up = next(i for i, c in enumerate(calls) if " up -d" in c)
+        smoke = next(i for i, c in enumerate(calls) if "smoke.py" in c)
+        assert pull < up < smoke and "DEPLOYED" in out.stdout and "@sha256:" in calls[pull]
+        key = Path(tmp) / "ws/api.key"
+        assert key.read_text().strip() not in out.stdout and oct(key.stat().st_mode & 0o777) == "0o600"
+
+
+def test_deploy_refuses_before_pulling_when_the_machine_is_not_suitable():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, gpu="NVIDIA GeForce RTX 4090, 24564")
+        assert out.returncode == 1 and "Not deploying" in out.stderr and "FAIL  need exactly 2x RTX PRO 6000" in out.stdout
+        assert not any(c.startswith("pull ") or " up -d" in c for c in calls)
+
+
+def test_deploy_check_only_never_pulls_and_failed_smoke_is_not_ready():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, "--check-only")
+        assert out.returncode == 0 and "machine is ready" in out.stdout and not any(c.startswith("pull ") for c in calls)
+    with tempfile.TemporaryDirectory() as tmp:
+        out, calls = _deploy(tmp, smoke_rc=1)
+        assert out.returncode == 1 and "NOT READY" in out.stderr and "DEPLOYED" not in out.stdout
+
+
+def test_release_env_pins_a_digest_and_compose_requires_an_image():
+    env = dict(l.split("=", 1) for l in (ROOT / "docker/release.env").read_text().splitlines() if l and not l.startswith("#"))
+    assert env["SECAI_SERVING_REPO"] == "ghcr.io/elonma-china/secai-serving" and len(env["SECAI_SERVING_DIGEST"]) == 71
+    assert "SECAI_SERVING_IMAGE:?" in (ROOT / "docker/compose.yaml").read_text()
+    assert "latest" not in (ROOT / "docker/deploy.sh").read_text().split("set -euo")[1]
+
+
+def test_shell_scripts_parse():
+    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh"):
+        subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
+
+
 sim = load("agent_sim")
 
 
