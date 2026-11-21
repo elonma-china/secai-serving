@@ -42,7 +42,15 @@ pinned by digest in `docker/release.env` (public package, no login); (3) `docker
 translate, OCR). It prints `DEPLOYED` only if every model answered. `--check-only` runs step 1 alone; `--down` stops the stack;
 `--workspace DIR`, `--image REF`, `--timeout SEC`, `--no-smoke` are available.
 
-Vast.ai: `docker/vast.sh offers | create <offer> --yes | key <id> api.key | tunnel <id>` (nothing is rented without `--yes`).
+Vast.ai (the instance runs the image itself, so there is no Docker host to check): the machine is checked twice.
+```bash
+docker/vast.sh offers                       # offers that meet every criterion, cheapest first
+docker/vast.sh check-offer <offer>          # before renting (free): 2x RTX PRO 6000 >= 90 GB, CUDA >= 13.2, RAM, disk, bandwidth, reliability
+docker/vast.sh create <offer> --yes         # re-checks the offer, then rents; boot waits for the API key, no model is loaded yet
+docker/vast.sh key <id> api.key             # first `check <id>` = preflight.sh --in-container over ssh (GPUs idle, RAM, /dev/shm,
+                                            # workspace, models in the image); the key is installed (and the stack starts) only if it passes
+docker/vast.sh tunnel <id>                  # local 38005/38000/38002/38004/38083; `destroy <id>` stops the billing
+```
 Released image: `ghcr.io/elonma-china/secai-serving:2fe2825-20261120-warm` (code of this repo + a compile-cache seed; starts in 118 s on a fresh 2x RTX PRO 6000 host) (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
 
 **Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):

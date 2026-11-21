@@ -256,6 +256,82 @@ def test_deploy_check_only_never_pulls_and_failed_smoke_is_not_ready():
         assert out.returncode == 1 and "NOT READY" in out.stderr and "DEPLOYED" not in out.stdout
 
 
+_spec = importlib.util.spec_from_file_location("vast_check", ROOT / "docker/vast_check.py")
+vast_check = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(vast_check)
+
+
+def _offer(**kw):
+    o = {"id": 7, "num_gpus": 2, "gpu_name": "RTX PRO 6000 WS", "gpu_ram": 97887, "cuda_max_good": 13.3, "cpu_ram": 257000,
+         "disk_space": 1500, "inet_down": 900, "reliability2": 0.99, "rentable": True, "dph_total": 3.0}
+    o.update(kw); return o
+
+
+def test_vast_offer_check_passes_a_good_offer_and_names_every_failed_criterion():
+    assert all(ok for _, ok, _, _ in vast_check.check(_offer()))
+    bad = {label for label, ok, _, _ in vast_check.check(_offer(num_gpus=1, cuda_max_good=13.0, cpu_ram=129000, inet_down=398)) if not ok}
+    assert bad == {"GPU count", "CUDA (driver)", "host RAM", "download speed"}
+    assert not dict((l, ok) for l, ok, _, _ in vast_check.check(_offer(gpu_name="RTX 5090")))["GPU model"]
+    assert not dict((l, ok) for l, ok, _, _ in vast_check.check(_offer(disk_space=100), disk_gb=250))["disk"]
+
+
+def test_vast_offer_check_cli_exit_codes():
+    def run(offers, oid):
+        return subprocess.run([sys.executable, str(ROOT / "docker/vast_check.py"), "offer", str(oid)], input=json.dumps(offers),
+                              capture_output=True, text=True)
+    good, bad, gone = run([_offer()], 7), run([_offer(num_gpus=1)], 7), run([_offer()], 8)
+    assert good.returncode == 0 and "OFFER OK" in good.stdout
+    assert bad.returncode == 1 and "FAIL  GPU count" in bad.stdout and "OFFER REJECTED" in bad.stdout
+    assert gone.returncode == 2 and "not found" in gone.stderr
+    q = subprocess.run([sys.executable, str(ROOT / "docker/vast_check.py"), "query"], capture_output=True, text=True).stdout
+    assert "num_gpus=2" in q and "disk_space>=250" in q
+
+
+def _in_container(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887", shm="128G", models=True, used="0"):
+    """preflight.sh --in-container on a fake rented machine: no docker at all, fake GPU/RAM/disk tools and image layout."""
+    import os, stat
+    env, _ = _fake_host(tmp, gpu=gpu)
+    bindir = Path(tmp) / "bin"
+    (bindir / "docker").unlink()
+    def tool(name, body):
+        f = bindir / name; f.write_text("#!/usr/bin/env bash\n" + body); f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    tool("df", f'case "$*" in *shm*) echo Avail; echo {shm};; *) echo Avail; echo 230G;; esac\n')
+    tool("nvidia-smi", f'''case "$*" in
+  *name,memory.total*) printf '%s\\n' "{gpu}" "{gpu}";;
+  *memory.used*) printf '%s\\n' {used} 0;;
+  *) echo "| NVIDIA-SMI 595.00   Driver Version: 595.00   CUDA Version: 13.2 |";; esac\n''')
+    stack = Path(tmp) / "opt/stack"; stack.mkdir(parents=True)
+    (stack / "up.sh").write_text("")
+    (stack / "fetch_models.py").write_text("import sys; sys.exit(%d)\n" % (0 if models else 1))
+    env = {**env, "SECAI_STACK_DIR": str(stack)}
+    return subprocess.run(["bash", str(ROOT / "docker/preflight.sh"), "--in-container", "--workspace", str(Path(tmp) / "ws")],
+                          capture_output=True, text=True, env=env, timeout=60)
+
+
+def test_preflight_in_container_needs_no_docker_and_no_key_yet():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        out = _in_container(tmp)
+        assert out.returncode == 0 and "PREFLIGHT OK" in out.stdout, out.stdout + out.stderr
+        assert "docker" not in out.stdout.lower() and "api key" not in out.stdout and "/dev/shm has 128 GB" in out.stdout
+
+
+def test_preflight_in_container_rejects_wrong_gpus_busy_gpus_small_shm_and_missing_models():
+    import tempfile
+    for kw, needle in (({"gpu": "NVIDIA GeForce RTX 4090, 24564"}, "need exactly 2x RTX PRO 6000"), ({"used": "40000"}, "already have > 2 GiB"),
+                       ({"shm": "64G"}, "/dev/shm has 64 GB free"), ({"models": False}, "baked models missing")):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = _in_container(tmp, **kw)
+            assert out.returncode == 1 and needle in out.stdout and "PREFLIGHT FAILED" in out.stdout, (kw, out.stdout)
+
+
+def test_vast_key_is_gated_by_the_machine_check():
+    s = (ROOT / "docker/vast.sh").read_text()
+    key = s[s.index("  key)"):s.index("  tunnel)")]
+    assert key.index('"$0" check "$2"') < key.index("api.key.tmp")
+    create = s[s.index("  create)"):s.index("  key)")]
+    assert create.index('"$0" check-offer "$2"') < create.index("vastai create instance")
+
+
 def test_release_env_pins_a_digest_and_compose_requires_an_image():
     env = dict(l.split("=", 1) for l in (ROOT / "docker/release.env").read_text().splitlines() if l and not l.startswith("#"))
     assert env["SECAI_SERVING_REPO"] == "ghcr.io/elonma-china/secai-serving" and len(env["SECAI_SERVING_DIGEST"]) == 71
