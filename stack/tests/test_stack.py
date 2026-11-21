@@ -332,6 +332,37 @@ def test_vast_key_is_gated_by_the_machine_check():
     assert create.index('"$0" check-offer "$2"') < create.index("vastai create instance")
 
 
+def _host_code(tmp, seed_flags, host_flags):
+    cache = Path(tmp) / "cache"; ops = cache / ".cache/flashinfer/0.7.4/120f/cached_ops"
+    (ops / "sm120_prims_fmha_fp8_sm120a_cute_dsl").mkdir(parents=True); (ops / "sm120_prims_fmha_fp8_sm120a_cute_dsl/k.o").write_text("x")
+    (ops / "xqa_kernel").mkdir(); (cache / "triton").mkdir()
+    if seed_flags is not None:
+        (cache / ".seed-cpu-flags").write_text(seed_flags)
+    cpuinfo = Path(tmp) / "cpuinfo"; cpuinfo.write_text(f"processor\t: 0\nflags\t\t: fpu {host_flags} hypervisor\n")
+    out = subprocess.run(["bash", "-c", f'. {ROOT}/docker/host_code.sh; drop_foreign_host_code {cache} {cpuinfo}'], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    return out.stdout, (ops / "sm120_prims_fmha_fp8_sm120a_cute_dsl").exists(), (ops / "xqa_kernel").exists(), cache
+
+
+def test_seeded_cute_dsl_host_code_is_dropped_only_on_a_cpu_that_lacks_its_instructions():
+    import tempfile
+    zen3, zen4 = "sse4_2 avx avx2 fma bmi2", "sse4_2 avx avx2 fma bmi2 avx512f avx512bw"
+    with tempfile.TemporaryDirectory() as tmp:   # unrecorded seed (released image) on a CPU without AVX-512: the 2026-11-21 crash
+        msg, cute, other, cache = _host_code(tmp, None, zen3)
+        assert not cute and other and "avx512f" in msg and "avx512f" not in (cache / ".seed-cpu-flags").read_text()
+        again = subprocess.run(["bash", "-c", f'. {ROOT}/docker/host_code.sh; drop_foreign_host_code {cache} {Path(tmp) / "cpuinfo"}'], capture_output=True, text=True)
+        assert again.stdout == ""   # rebuilt objects now match this CPU: not dropped again on the next boot
+    with tempfile.TemporaryDirectory() as tmp:
+        msg, cute, other, _ = _host_code(tmp, None, zen4)
+        assert cute and other and msg == ""
+    with tempfile.TemporaryDirectory() as tmp:   # recorded seed: only missing ISA flags count, not unrelated ones
+        msg, cute, _, _ = _host_code(tmp, zen4, zen3)
+        assert not cute and "avx512f" in msg and "avx512bw" in msg
+    with tempfile.TemporaryDirectory() as tmp:
+        msg, cute, _, _ = _host_code(tmp, zen3, zen4)
+        assert cute and msg == ""
+
+
 def test_release_env_pins_a_digest_and_compose_requires_an_image():
     env = dict(l.split("=", 1) for l in (ROOT / "docker/release.env").read_text().splitlines() if l and not l.startswith("#"))
     assert env["SECAI_SERVING_REPO"] == "ghcr.io/elonma-china/secai-serving" and len(env["SECAI_SERVING_DIGEST"]) == 71
@@ -466,7 +497,7 @@ def test_append_layer_builds_a_deterministic_layer_and_a_consistent_config():
 
 
 def test_shell_scripts_parse():
-    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh"):
+    for s in ("stack/up.sh", "stack/down.sh", "stack/kv_gc.sh", "docker/boot.sh", "docker/vast.sh", "docker/preflight.sh", "docker/build.sh", "docker/deploy.sh", "docker/host_code.sh", "stack/make_seed.sh"):
         subprocess.run(["bash", "-n", str(ROOT / s)], check=True)
 
 

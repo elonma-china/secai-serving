@@ -46,6 +46,9 @@ if [ "$INC" = 1 ]; then
   shm=$(df -BG --output=avail /dev/shm 2>/dev/null | tail -1 | tr -dc 0-9)
   [ "${shm:-0}" -ge 114 ] && ok "/dev/shm has ${shm} GB free (>= 114 for 2x55 GiB KV offload)" \
     || fail "/dev/shm has ${shm:-0} GB free, need >= 114" "use a host that gives the container >= 128 GB of /dev/shm"
+  cpu=$(grep -m1 '^model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ *//')
+  grep -qw avx512f /proc/cpuinfo 2>/dev/null && ok "CPU ${cpu:-unknown} (AVX-512)" \
+    || ok "CPU ${cpu:-unknown} (no AVX-512: boot rebuilds the cached CuTe DSL kernels for this CPU, ~+30 s)"
   stack_dir="${SECAI_STACK_DIR:-/opt/secai/stack}"
   if [ -f "$stack_dir/up.sh" ] && MODEL_DIR="${MODEL_DIR:-/opt/secai/models}" python3 "$stack_dir/fetch_models.py" --offline >/dev/null 2>&1; then
     ok "image code and all pinned models present (${SECAI_IMAGE_REVISION:-revision unknown})"
