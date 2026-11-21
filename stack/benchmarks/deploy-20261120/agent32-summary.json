@@ -1,0 +1,46 @@
+{
+ "old_flow": {
+  "agents": 32,
+  "completed": 32,
+  "correct": 32,
+  "errors": 0,
+  "turns_total": 512,
+  "prompt_tokens_total": 29428665,
+  "output_tokens_total": 17565,
+  "run_wall_s": 387.3561305999756,
+  "output_tok_per_s": 45.34586808473532,
+  "ttft_s": {
+   "p50": 9.45861029624939,
+   "p95": 37.93526530265808,
+   "max": 74.34974384307861
+  },
+  "agent_wall_s": {
+   "p50": 320.8538820743561,
+   "max": 382.4165995121002
+  },
+  "prefix_cache_hit_ratio": 0.449,
+  "external_prefix_hit_ratio": 0.704
+ },
+ "prebuilt_image": {
+  "agents": 32,
+  "completed": 32,
+  "correct": 32,
+  "errors": 0,
+  "turns_total": 512,
+  "prompt_tokens_total": 29428665,
+  "output_tokens_total": 17625,
+  "run_wall_s": 366.0871968269348,
+  "output_tok_per_s": 48.144267684761715,
+  "ttft_s": {
+   "p50": 9.524532556533813,
+   "p95": 29.95875358581543,
+   "max": 62.32908487319946
+  },
+  "agent_wall_s": {
+   "p50": 299.6140878200531,
+   "max": 363.1241557598114
+  },
+  "prefix_cache_hit_ratio": 0.431,
+  "external_prefix_hit_ratio": 0.724
+ }
+}

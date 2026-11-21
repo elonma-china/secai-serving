@@ -72,3 +72,42 @@ About 4M of the computed tokens are the new file each turn and cannot be cached,
 - Not measured: LMCache, ARC eviction (`KV_EVICTION=arc`), long-duration stability, OCR under load.
 - The NVMe tier is trimmed by `kv_gc.sh` by file mtime (FIFO by write time), not LRU.
 - The FP8 patch rewrites the installed `vllm/v1/attention/backends/flashinfer.py` and is tested only against vLLM 0.34.0rc1.dev776 / FlashInfer 0.7.4.
+
+## Deployment: prebuilt image vs the previous flow (2026-11-20)
+
+One Vast.ai host (2x RTX PRO 6000 WS 97 GB, 64 vCPU, 1 TB RAM, driver 620.70), both flows measured back to back on it, same vLLM build
+(`7c3a9302f`), same settings. **Old flow** = `vllm/vllm-openai` image + `apt install nginx` + `git clone` (`main` at `2da41f8`) + `up.sh`, models pulled
+lazily from the Hub. **New flow** = `ghcr.io/elonma-china/secai-serving:cbe8629-20261120` (models baked in) + `docker/boot.sh`. Times are measured by one
+probe that polls every port's `/health` every 2 s from the moment the start command runs; READY = `stack/smoke.py` passes (one real request per
+model). Raw marks: [`deploy-20261120/times.log`](deploy-20261120/times.log). Image pull time (655 s for 36 GB) is not included: Vast does not bill image loading.
+
+| Scenario | Old flow | New flow | Change |
+|---|---|---|---|
+| First boot, empty caches: all services up / READY | 553 s | 510 s | -8% |
+| First boot: first LLM replica (:8001) answering | 551 s | 150 s | **-73%** |
+| New machine with a compile-cache seed (cache wiped, 12 MB bundle restored from the Hub in 1 s): READY | 553 s (no seed) | **179 s** | **-68%** |
+| Restart on the same machine, caches on disk: READY | 180 s | 179 s | 0% |
+| Restart, caches on disk: first LLM replica answering | 177 s | 73 s | -59% |
+| Replica B killed (SIGKILL): back to READY | manual | 241 s, automatic (detected after 52 s) | - |
+
+Where the first-boot time goes (new flow): weights load in 1-3 s per model (local disk), so the 510 s is warm-up on the GPU: torch.compile / FlashInfer
+JIT / CUDA-graph capture and memory profiling (OCR ~50 s, translation ~34 s, LLM 20-25 s), and the GPU1 services start one after another
+(embedding 54 s, rerank 142 s, OCR 286 s, translation 430 s, replica B 508 s). The compile caches remove most of that (translation graph capture 36 s -> 2 s,
+`AOT_HIT` for embedding and rerank); the old flow gets the same benefit on a restart because it keeps the caches on disk too, which is why that row is equal.
+The speedup of the new flow is therefore: LLM-A no longer waits for the auxiliary chain, and a fresh machine can start from a published cache seed.
+The remaining floor (179 s) is the serial GPU1 chain.
+
+Serving quality and speed are unchanged (same engine and flags); single run each, so differences of a few percent are noise:
+
+| 32 agents x 16 turns (29.4M prompt tokens) | Old flow | New flow |
+|---|---|---|
+| Correct / errors | 32/32 / 0 | 32/32 / 0 |
+| Run time | 387 s | 366 s |
+| TTFT p50 / p95 / max | 9.5 / 37.9 / 74.3 s | 9.5 / 30.0 / 62.3 s |
+| Decode c=1 / c=16 | 123 / 1328 tok/s | 123 / 1358 tok/s |
+| Needle at ~118.6K tokens | 5/5 | 5/5 |
+| Prefix hit / external (offload tier) hit | 44.9% / 70.4% | 43.1% / 72.3% |
+
+Caveats: peak GPU0 memory 94.4-96.8 GiB of 97.9 GiB in both flows (no OOM, little headroom); `kv_check.py` is still INCONCLUSIVE (outputs match, but the flood
+does not force a restore from the offload tier; the agent run shows 660 GB moved through it and all answers correct); the 640 s of image load is paid once per
+machine; a different host class can change the absolute numbers (an earlier run on a 48-vCPU host took 473 s for the same agent load).
