@@ -33,6 +33,8 @@ elif [ "${CACHE_RESTORE:-1}" = 1 ] && [ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ]
   [ "$rc" = 3 ] && cache_miss=1
   [ "$rc" = 0 ] || [ "$rc" = 3 ] || log "cache restore failed; continuing without it"
 fi
+# cached host code built for another CPU crashes with "Illegal instruction": drop it so it is rebuilt here
+if [ -f "$ROOT/docker/host_code.sh" ]; then . "$ROOT/docker/host_code.sh"; msg=$(drop_foreign_host_code "$CACHE_DIR"); [ -z "$msg" ] || log "$msg"; fi
 
 # The key may arrive after boot (e.g. scp'd to a fresh Vast instance, so it never shows up in the instance env/UI):
 # downloads already run meanwhile, so waiting for it costs nothing.
