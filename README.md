@@ -51,6 +51,9 @@ docker/vast.sh key <id> api.key             # first `check <id>` = preflight.sh 
                                             # workspace, models in the image); the key is installed (and the stack starts) only if it passes
 docker/vast.sh tunnel <id>                  # local 38005/38000/38002/38004/38083; `destroy <id>` stops the billing
 ```
+The compile-cache seed is GPU code plus a little CPU code (FlashInfer CuTe DSL kernels). On a CPU without the seed CPU's
+instructions (e.g. no AVX-512) boot drops those objects and rebuilds them (`docker/host_code.sh`, ~+30 s); without that the
+LLM replicas die with "Illegal instruction".
 Released image: `ghcr.io/elonma-china/secai-serving:2fe2825-20261120-warm` (code of this repo + a compile-cache seed; starts in 118 s on a fresh 2x RTX PRO 6000 host) (digest in `docker/release.env`, which is what gets deployed; `latest` is never used). Roll back by putting the previous tag/digest in `release.env` or passing `--image`.
 
 **Build and release** (needs ~100 GB free disk; the weights come from the public `secai1999/*` repos at the pinned revisions):
