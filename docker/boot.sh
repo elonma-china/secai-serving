@@ -69,8 +69,7 @@ unhealthy() {
     curl -fsS --max-time 10 "http://127.0.0.1:$p/health" >/dev/null 2>&1 || { echo "$p"; return 0; }
   done
   for p in 8004 18083 8005; do   # adapters / nginx: any HTTP answer counts
-    local hh="$h"; [ "$p" != 18083 ] || hh=127.0.0.1
-    curl -s -o /dev/null --max-time 10 "http://$hh:$p/" 2>/dev/null || { echo "$p"; return 0; }
+    curl -s -o /dev/null --max-time 10 "http://$h:$p/" 2>/dev/null || { echo "$p"; return 0; }
   done
   return 1
 }

@@ -2,7 +2,7 @@
 # Final stack on ONE host with exactly 2x RTX PRO 6000 (96 GB). Everything is vLLM.
 #   GPU0: LLM replica A                                  :8001
 #   GPU1: LLM replica B :8003 + embedding :8000 + rerank :8002
-#         + OvisOCR3 (loopback :18303 -> adapter :18083) + Hy-MT2 (loopback :18304 -> adapter :8004)
+#         + OvisOCR3 (loopback :18303 -> public adapter :18083) + Hy-MT2 (loopback :18304 -> adapter :8004)
 #   nginx :8005 -> A/B with session affinity (prefix-cache locality).
 # STARTUP=auto (default) | serial | parallel_aux | parallel: auto = parallel when stack/kv_plan.json was learned on this exact configuration
 #   (same GPU, vLLM and launch settings), otherwise serial. serial: serial starts the GPU1 services one after another (each sizes its KV cache from
@@ -113,7 +113,7 @@ if [ "$DRY" = 1 ]; then
   fi
   show 0 "${A_ARGS[@]}"; show 1 "${B_ARGS[@]}"
   show 1 "${EMBED_ARGS[@]}"; show 1 "${RERANK_ARGS[@]}"; show 1 "${OCR_ARGS[@]}"; show 1 "${MT_ARGS[@]}"
-  echo "python3 $ROOT/stack/ocr_adapter.py --port 18083 ... ${OCR_PROMPT_ARGS[*]}"; echo "python3 $ROOT/stack/mt_adapter.py --port 8004"
+  echo "python3 $ROOT/stack/ocr_adapter.py --host $BIND_HOST --port 18083 ... ${OCR_PROMPT_ARGS[*]}"; echo "python3 $ROOT/stack/mt_adapter.py --port 8004"
   exit 0
 fi
 
@@ -216,9 +216,10 @@ esac
 healthy llm-a 8001; healthy llm-b 8003
 
 listening() { curl -s -o /dev/null --max-time 2 "http://$HEALTH_HOST:$1/" 2>/dev/null; }   # any HTTP answer
+# OCR takes the same API key as every other port; the private token stays as a second accepted credential so gateways already configured with it keep working
 (umask 077; [ -f "$OCR_TOKEN_FILE" ] || python3 -c 'import secrets;print(secrets.token_urlsafe(32))' >"$OCR_TOKEN_FILE")
 if ! listening 18083; then
-  API_KEY="$API_KEY" nohup setsid python3 "$ROOT/stack/ocr_adapter.py" --port 18083 --backend-url http://127.0.0.1:18303 \
+  API_KEY="$API_KEY" nohup setsid python3 "$ROOT/stack/ocr_adapter.py" --host "$BIND_HOST" --port 18083 --backend-url http://127.0.0.1:18303 \
     --token-file "$OCR_TOKEN_FILE" "${OCR_PROMPT_ARGS[@]}" >"$LOG_DIR/ocr-adapter.log" 2>&1 </dev/null &
   echo "$!" >"$LOG_DIR/ocr-adapter.pid"
 fi
@@ -229,4 +230,4 @@ fi
 sed "s/^    listen 8005;/    listen $BIND_HOST:8005;/" "$ROOT/stack/nginx.conf" >/etc/nginx/conf.d/secai-llm.conf && nginx -t && { nginx -s reload 2>/dev/null || nginx; }
 healthy llm-a 8005 2>/dev/null || curl -fsS "http://$HEALTH_HOST:8005/health" >/dev/null
 mark "stack up"
-echo "Stack up. Public: 8005 LLM, 8000 embed, 8002 rerank, 8004 translate. OCR 18083 stays loopback (SSH tunnel)."
+echo "Stack up. Public: 8005 LLM, 8000 embed, 8002 rerank, 8004 translate. 18083 OCR (same API key)."

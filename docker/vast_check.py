@@ -2,6 +2,7 @@
 
   vastai search offers 'gpu_name=RTX_PRO_6000_WS rentable=true' --raw | vast_check.py offer <offer_id> [--disk 250]
   vast_check.py query [--disk 250]      # the search query docker/vast.sh offers uses (same criteria)
+  vastai show instance <id> --raw | vast_check.py ports     # public URL of every service of a rented instance
 
 Each criterion prints ok/FAIL with what the offer has and what is needed. Exit 0 = every criterion passes, 1 = at least
 one fails, 2 = the offer is not in the input (already rented or gone). The second check, on the rented machine itself,
@@ -33,6 +34,20 @@ def check(offer, disk_gb=250):
     return [(label, bool(test(offer)), shown(offer), need) for label, test, shown, need in criteria(disk_gb)]
 
 
+SERVICES = {"8005": "LLM (nginx)", "8000": "embedding", "8002": "rerank", "8004": "translate", "18083": "OCR"}
+
+
+def ports(instance):
+    """(lines, missing service names) for `vastai show instance --raw`: the public URL Vast mapped to each service port."""
+    ip, lines = instance["public_ipaddr"], []
+    for key, mapped in sorted(instance.get("ports", {}).items(), key=lambda kv: int(kv[0].split("/")[0])):
+        port = key.split("/")[0]
+        if port in SERVICES and mapped:
+            lines.append(f"{SERVICES[port]:12} http://{ip}:{mapped[0]['HostPort']}   (container port {port})")
+    missing = [name for port, name in SERVICES.items() if f"{port}/tcp" not in instance.get("ports", {})]
+    return lines, missing
+
+
 def query(disk_gb=250, gpu_name="RTX_PRO_6000_WS"):
     return (f"num_gpus=2 gpu_name={gpu_name} gpu_ram>=90 cuda_vers>=13.2 cpu_ram>=200 disk_space>={disk_gb} "
             "inet_down>=500 reliability>0.98 rentable=true")
@@ -42,10 +57,17 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     o = sub.add_parser("offer"); o.add_argument("offer_id", type=int); o.add_argument("--disk", type=int, default=250)
+    sub.add_parser("ports")
     q = sub.add_parser("query"); q.add_argument("--disk", type=int, default=250); q.add_argument("--gpu-name", default="RTX_PRO_6000_WS")
     a = p.parse_args(argv)
     if a.cmd == "query":
         print(query(a.disk, a.gpu_name)); return 0
+    if a.cmd == "ports":
+        lines, missing = ports(json.load(sys.stdin))
+        print("\n".join(lines))
+        if missing:
+            print(f"not mapped by Vast: {', '.join(missing)} (an instance made by docker/vast.sh create maps OCR too)")
+        return 0
     offers = json.load(sys.stdin)
     offer = next((x for x in offers if x.get("id") == a.offer_id), None)
     if offer is None:

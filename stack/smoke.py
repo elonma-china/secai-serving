@@ -1,6 +1,6 @@
 """Readiness smoke: one real inference call per model, so "READY" means the models answer, not that a port listens.
-Exit 0 only if every check passes. Usage: smoke.py [--host 127.0.0.1] [--key-file /workspace/api.key] [--ocr-token-file FILE]
-  chat (via nginx + each replica), embedding, rerank, translation adapter, OCR adapter (skipped if its token file is absent).
+Exit 0 only if every check passes. Usage: smoke.py [--host 127.0.0.1] [--key-file /workspace/api.key]
+  chat (via nginx + each replica), embedding, rerank, translation adapter, OCR adapter (same API key).
 Synthetic inputs only. Respects the same model names and ports as up.sh."""
 import argparse, base64, io, json, os, pathlib, sys, time, urllib.error, urllib.request
 
@@ -21,7 +21,7 @@ def png_with_text(text):
     buf = io.BytesIO(); img.save(buf, "PNG"); return buf.getvalue()
 
 
-def checks(host, key, ocr_token, warm=False):
+def checks(host, key, warm=False):
     u = lambda port, path: f"http://{host}:{port}{path}"
     chat = {"model": LLM, "messages": [{"role": "user", "content": "Reply with the single word: pong"}], "max_tokens": 16, "temperature": 0}
     def llm(port):
@@ -57,35 +57,29 @@ def checks(host, key, ocr_token, warm=False):
         assert out["translated_text"].strip() and out["model"], out
         return out["translated_text"].strip()[:40]
     yield "translate :8004", translate
-    if ocr_token:
-        def ocr():
-            b64 = base64.b64encode(png_with_text("SECAI 2026")).decode()
-            out = post(u(18083, "/v1/ocr"), {"model": OCR, "image_base64": b64}, ocr_token)
-            text = " ".join(b["text"] for b in out["blocks"])
-            assert text.strip(), "OCR returned no text"
-            return text.strip()[:40]
-        yield "ocr :18083", ocr
+    def ocr():
+        b64 = base64.b64encode(png_with_text("SECAI 2026")).decode()
+        out = post(u(18083, "/v1/ocr"), {"model": OCR, "image_base64": b64}, key)
+        text = " ".join(b["text"] for b in out["blocks"])
+        assert text.strip(), "OCR returned no text"
+        return text.strip()[:40]
+    yield "ocr :18083", ocr
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--key-file", default=os.environ.get("API_KEY_FILE", "/workspace/api.key"))
-    p.add_argument("--ocr-token-file", default=os.environ.get("OCR_TOKEN_FILE", "/workspace/secai-ovis-ocr.token"))
     p.add_argument("--warm", action="store_true", help="also send a ~20K-token prompt to each replica (for cache seeding)")
     a = p.parse_args()
     key = os.environ.get("API_KEY") or pathlib.Path(a.key_file).read_text().strip()
-    tok = pathlib.Path(a.ocr_token_file)
-    ocr_token = tok.read_text().strip() if tok.is_file() else None
     bad = 0
-    for name, fn in checks(a.host, key, ocr_token, a.warm):
+    for name, fn in checks(a.host, key, a.warm):
         t0 = time.time()
         try:
             detail = fn(); print(f"PASS {name:24s} {time.time() - t0:5.1f}s  {detail}")
         except Exception as e:  # report every failure, not just the first
             bad += 1; print(f"FAIL {name:24s} {time.time() - t0:5.1f}s  {type(e).__name__}: {e}")
-    if not ocr_token:
-        print("SKIP ocr :18083 (no token file)")
     print("READY" if not bad else f"NOT READY: {bad} failed")
     return 1 if bad else 0
 

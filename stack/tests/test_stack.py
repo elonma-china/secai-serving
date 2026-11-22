@@ -1,3 +1,4 @@
+import base64
 import json
 import importlib.util
 import subprocess
@@ -92,6 +93,58 @@ def test_adapter_default_models():
 
 
 
+def _ocr_server(tokens):
+    import threading
+    from http.server import ThreadingHTTPServer
+    ocr = load("ocr_adapter")
+    class Backend(ocr.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            body = json.dumps({"choices": [{"message": {"content": "SECAI 2026"}}]}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *a): pass
+    back = ThreadingHTTPServer(("127.0.0.1", 0), Backend); threading.Thread(target=back.serve_forever, daemon=True).start()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), ocr.make_handler(tokens, "backend-key", f"http://127.0.0.1:{back.server_port}", "read"))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return ocr, srv, back
+
+
+def test_ocr_adapter_accepts_the_stack_api_key_and_the_legacy_token_and_nothing_else():
+    import urllib.request
+    ocr, srv, back = _ocr_server(["stack-key", "legacy-token"])
+    def call(auth):
+        req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/v1/ocr", json.dumps({"model": ocr.MODEL, "image_base64": base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 16).decode()}).encode(),
+                                     {"Content-Type": "application/json", **({"Authorization": auth} if auth else {})})
+        try:
+            with urllib.request.urlopen(req) as r: return r.status, json.load(r)
+        except urllib.error.HTTPError as e: return e.code, None
+    try:
+        for good in ("Bearer stack-key", "Bearer legacy-token"):
+            status, out = call(good)
+            assert status == 200 and out["blocks"][0]["text"] == "SECAI 2026", good
+        for bad in (None, "Bearer wrong", "stack-key", "Bearer ", "Bearer stack-key2"):
+            assert call(bad)[0] == 401, bad
+        assert ocr.make_handler("only-key", "b", "http://x", "p") and ocr.make_handler([], "b", "http://x", "p")
+    finally:
+        srv.shutdown(); back.shutdown()
+
+
+def test_ocr_adapter_is_public_like_the_other_ports():
+    src = (ROOT / "stack/ocr_adapter.py").read_text()
+    assert '("127.0.0.1", args.port)' not in src and "(args.host, args.port)" in src and 'os.environ.get("BIND_HOST", "0.0.0.0")' in src
+    out = dry(BIND_HOST="0.0.0.0", API_KEY="k")
+    assert "ocr_adapter.py --host 0.0.0.0 --port 18083" in out
+    assert "ocr_adapter.py --host 127.0.0.1 --port 18083" in dry(BIND_HOST="127.0.0.1", API_KEY="k")
+    assert "--host 127.0.0.1 --port 18303" in out    # the vLLM behind the adapter stays on loopback
+    assert " 18083" in (ROOT / "docker/Dockerfile").read_text().split("EXPOSE")[1].split("\n")[0]
+    assert "-p 18083:18083" in (ROOT / "docker/vast.sh").read_text()   # Vast maps OCR even on images built before it was EXPOSEd
+    boot = (ROOT / "docker/boot.sh").read_text()
+    assert "127.0.0.1" not in boot[boot.index("for p in 8004 18083 8005"):boot.index("for p in 8004 18083 8005") + 200]
+    smoke = load("smoke")
+    names = [n for n, _ in smoke.checks("h", "key")]
+    assert "ocr :18083" in names
+
+
 def test_gateway_protocol_language_codes():
     assert mt.LANG_NAMES["vi"] == "Vietnamese" and mt.LANG_NAMES["zh"] == "Chinese"
     assert all(mt.LANG_NAMES[c] for c in ("vi", "en", "zh", "ja", "ko", "fr", "de", "es", "ru", "ar"))
@@ -171,7 +224,7 @@ def test_fetch_marker_and_offline_check(tmp_path=None):
 
 def test_bind_host_limits_public_ports():
     out = dry(BIND_HOST="127.0.0.1")
-    assert "0.0.0.0" not in out and out.count("--host 127.0.0.1") == 6
+    assert "0.0.0.0" not in out and out.count("--host 127.0.0.1") == 7   # 6 vLLM servers + the OCR adapter
     assert "--host 0.0.0.0" in dry() and "--host 127.0.0.1" in dry()
 
 
@@ -331,6 +384,18 @@ def test_preflight_reads_the_cuda_version_of_old_and_new_driver_banners():
             out = _in_container(tmp, banner=banner)
             assert (out.returncode == 0) == ok, (banner, out.stdout)
             assert ("supports CUDA 13" in out.stdout) == ok
+
+
+def test_vast_ports_lists_the_public_url_of_every_service_and_flags_unmapped_ones():
+    def m(port): return [{"HostIp": "0.0.0.0", "HostPort": str(port)}]
+    inst = {"public_ipaddr": "1.2.3.4", "ports": {"22/tcp": m(1), "8005/tcp": m(40179), "8000/tcp": m(40122), "8002/tcp": m(40148), "8004/tcp": m(40120), "18083/tcp": m(40199)}}
+    lines, missing = vast_check.ports(inst)
+    assert missing == [] and len(lines) == 5 and all("(container port 22)" not in l and ":1 " not in l for l in lines)   # ssh is not listed
+    assert any(l.startswith("OCR") and "http://1.2.3.4:40199" in l for l in lines)
+    del inst["ports"]["18083/tcp"]
+    assert vast_check.ports(inst)[1] == ["OCR"]
+    out = subprocess.run([sys.executable, str(ROOT / "docker/vast_check.py"), "ports"], input=json.dumps(inst), capture_output=True, text=True)
+    assert out.returncode == 0 and "not mapped by Vast: OCR" in out.stdout and "http://1.2.3.4:40179" in out.stdout
 
 
 def test_vast_key_is_gated_by_the_machine_check():
