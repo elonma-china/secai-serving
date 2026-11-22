@@ -50,4 +50,4 @@ if [ "$SMOKE" = 1 ]; then
   echo "== 4/4 smoke: one real request per model"
   docker exec "$NAME" python3 /opt/secai/stack/smoke.py || { echo "NOT READY: a model did not answer (see above)" >&2; exit 1; }
 fi
-echo "DEPLOYED $IMAGE  (LLM :8005, embedding :8000, rerank :8002, translate :8004; OCR on loopback :18083)"
+echo "DEPLOYED $IMAGE  (LLM :8005, embedding :8000, rerank :8002, translate :8004, OCR :18083; all need the API key)"

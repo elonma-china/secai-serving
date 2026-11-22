@@ -7,7 +7,7 @@ One host, two RTX PRO 6000 (96 GB), everything on vLLM. Context 131072. Tuned fo
 | 8005 | LLM (nginx, session-affine) -> 8001 / 8003 | `secai1999/LLM-Autoscan-v1`, one TP1 replica per GPU |
 | 8000 / 8002 | embedding / rerank | `secai1999/Embedding-Autoscan-v1`, `secai1999/Rerank-Autoscan-v1` (GPU1) |
 | 8004 | translation adapter -> vLLM | `secai1999/Translate-Autoscan-v1` (GPU1) |
-| 18083 | OCR adapter (loopback only) | `secai1999/OCR-Autoscan-v1` (GPU1) |
+| 18083 | OCR adapter (`POST /v1/ocr`) | `secai1999/OCR-Autoscan-v1` (GPU1) |
 
 ## Run
 
@@ -49,7 +49,8 @@ docker/vast.sh check-offer <offer>          # before renting (free): 2x RTX PRO 
 docker/vast.sh create <offer> --yes         # re-checks the offer, then rents; boot waits for the API key, no model is loaded yet
 docker/vast.sh key <id> api.key             # first `check <id>` = preflight.sh --in-container over ssh (GPUs idle, RAM, /dev/shm,
                                             # workspace, models in the image); the key is installed (and the stack starts) only if it passes
-docker/vast.sh tunnel <id>                  # local 38005/38000/38002/38004/38083; `destroy <id>` stops the billing
+docker/vast.sh ports <id>                   # public URL of each service, incl. OCR (all need the API key, none has TLS)
+docker/vast.sh tunnel <id>                  # optional private access via SSH; `destroy <id>` stops the billing
 ```
 The compile-cache seed is GPU code plus a little CPU code (FlashInfer CuTe DSL kernels). On a CPU without the seed CPU's
 instructions (e.g. no AVX-512) boot drops those objects and rebuilds them (`docker/host_code.sh`, ~+30 s); without that the
@@ -69,7 +70,7 @@ RAM for KV offload. Boot sequence: seed/restore compile cache -> wait for the ke
 KV size per service from `stack/kv_plan.json`; `STARTUP=serial` restores the one-by-one start) -> watchdog (unhealthy 60 s -> `down.sh`
 + `up.sh`, 3 times, then exit so `restart: unless-stopped` takes over). Service logs go to stdout (`docker logs`, prefixed
 `[llm-a]`...) and to `/workspace/logs`; per-service ready times are in `startup-timeline.log`; vLLM serves Prometheus
-`/metrics` on 8000/8001/8002/8003. `BIND_HOST=127.0.0.1` limits the public ports to loopback (tunnel / reverse proxy).
+`/metrics` on 8000/8001/8002/8003. Every service port (8005, 8000, 8002, 8004, 18083) listens on `BIND_HOST` and needs the same API key (`Authorization: Bearer <key>`), so a client on any machine only needs the URL and the key; `BIND_HOST=127.0.0.1` limits them to loopback (tunnel / reverse proxy). The vLLM behind OCR (18303) and Hy-MT (18304) stay on loopback; only the adapters are public.
 
 Without Docker: `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MODEL_DIR=/workspace/models bash stack/up.sh`.
 Compile caches can also be shared without the image through `stack/cache_bundle.py` (private HF repo). Not covered: one
@@ -97,7 +98,7 @@ Results vs the previous setup (32 concurrent agents, each running a 16-turn tool
 | `LLM_UTIL_A` / `LLM_UTIL_B` | 0.90 / 0.74 | GPU memory fraction; B shares GPU1 with the four aux models |
 | `LLM_BATCHED_TOKENS`, `LLM_MAX_NUM_SEQS`, `LLM_MAX_MODEL_LEN` | 16384, 64, 131072 | |
 | `MODEL_DIR` | empty (image: `/opt/secai/models`) | serve local copies under the Hub names, offline |
-| `BIND_HOST` | `0.0.0.0` | interface of the public ports; `127.0.0.1` = loopback only |
+| `BIND_HOST` | `0.0.0.0` | interface of the public ports (incl. OCR); `127.0.0.1` = loopback only |
 | `STARTUP` | `auto` | `auto` = all services start at once when `stack/kv_plan.json` matches this configuration (else serial); `serial`, `parallel_aux`, `parallel` force a mode. Cold start 516 s -> 135-144 s, warm 177 s -> 74-81 s: [stack/benchmarks/STARTUP.md](stack/benchmarks/STARTUP.md) |
 | `CACHE_DIR` | `/workspace/cache` | torch.compile / Triton / FlashInfer caches (persist across restarts) |
 

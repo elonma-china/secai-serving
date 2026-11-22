@@ -21,7 +21,8 @@ if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
   good=0; for g in "${gpus[@]}"; do [[ "$g" == *"RTX PRO 6000"* ]] && [ "${g##*, }" -ge 90000 ] && good=$((good + 1)); done
   [ "${#gpus[@]}" -eq 2 ] && [ "$good" -eq 2 ] && ok "2x RTX PRO 6000 (>= 90 GB each)" \
     || fail "need exactly 2x RTX PRO 6000 of >= 90 GB, found: ${gpus[*]:-none}" "use a host with exactly two RTX PRO 6000 (96 GB)"
-  cuda=$(nvidia-smi | sed -n 's/.*CUDA Version: \([0-9]*\.[0-9]*\).*/\1/p' | head -1)
+  # driver >= 610 prints "CUDA UMD Version: 13.3" instead of "CUDA Version: 13.2"
+  cuda=$(nvidia-smi | sed -n 's/.*CUDA \(UMD \)\{0,1\}Version: \([0-9]*\.[0-9]*\).*/\2/p' | head -1)
   [ -n "$cuda" ] && [ "$(printf '%s\n13.2\n' "$cuda" | sort -V | head -1)" = 13.2 ] && ok "driver supports CUDA $cuda (image needs >= 13.2)" \
     || fail "driver supports CUDA ${cuda:-unknown}, image needs >= 13.2" "upgrade the NVIDIA driver"
 else

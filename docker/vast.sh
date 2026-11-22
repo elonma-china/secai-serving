@@ -6,7 +6,8 @@
 #   docker/vast.sh check <instance_id>            # preflight INSIDE the rented machine (GPUs, RAM, /dev/shm, disk, models)
 #   docker/vast.sh key <instance_id> <key_file>   # runs `check`, then copies the key to /workspace/api.key: boot waits for
 #                                                 # it, so no model is loaded before the machine passed the check
-#   docker/vast.sh tunnel <instance_id>           # local 38005/38000/38002/38004/38083 -> instance ports
+#   docker/vast.sh ports <instance_id>            # public URL of every service (needs the API key; no TLS)
+#   docker/vast.sh tunnel <instance_id>           # optional private access: local 38005/38000/38002/38004/38083 -> instance ports
 #   docker/vast.sh destroy <instance_id>          # stop billing (asks first; --yes skips the question)
 # The API key never goes into the instance env (visible in the Vast UI); boot.sh downloads models while it waits.
 set -euo pipefail
@@ -41,7 +42,8 @@ case "${1:-}" in
   create)
     [ -n "${2:-}" ] || { echo "usage: $0 create <offer_id> [--yes]" >&2; exit 2; }
     "$0" check-offer "$2" || { echo "not renting offer $2" >&2; exit 1; }
-    cmd=(vastai create instance "$2" --image "$IMAGE" --disk "$DISK_GB" --ssh --direct --onstart-cmd "$ONSTART")
+    # the image EXPOSEs 8000/8002/8004/8005 (Vast maps those); -p adds the OCR port to the mapping, so images built before it was EXPOSEd work too
+    cmd=(vastai create instance "$2" --image "$IMAGE" --disk "$DISK_GB" --ssh --direct --env '-p 18083:18083' --onstart-cmd "$ONSTART")
     [ -z "${GHCR_LOGIN:-}" ] || cmd+=(--login "$GHCR_LOGIN")   # e.g. '-u USER -p TOKEN ghcr.io' for a private image
     if [ "${3:-}" = --yes ]; then "${cmd[@]}"; else printf '%q ' "${cmd[@]}" | sed 's/-p [^ ]* ghcr/-p <redacted> ghcr/'; echo; echo "(dry run; add --yes to rent)"; fi;;
   key)
@@ -50,6 +52,10 @@ case "${1:-}" in
     read -r port host < <(ssh_target "$2")
     ssh -p "$port" -o StrictHostKeyChecking=accept-new "root@$host" 'umask 077; cat >/workspace/api.key.tmp && mv /workspace/api.key.tmp /workspace/api.key' <"$3"
     echo "key installed; follow progress: ssh -p $port root@$host tail -f /workspace/logs/boot.log";;
+  ports)
+    [ -n "${2:-}" ] || { echo "usage: $0 ports <instance_id>" >&2; exit 2; }
+    vastai show instance "$2" --raw | python3 "$HERE/vast_check.py" ports
+    echo "all need 'Authorization: Bearer <api key>'; the ports have no TLS: do not send real data over them";;
   tunnel)
     [ -n "${2:-}" ] || { echo "usage: $0 tunnel <instance_id>" >&2; exit 2; }
     read -r port host < <(ssh_target "$2")
