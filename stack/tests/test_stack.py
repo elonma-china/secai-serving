@@ -286,7 +286,7 @@ def test_vast_offer_check_cli_exit_codes():
     assert "num_gpus=2" in q and "disk_space>=250" in q
 
 
-def _in_container(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887", shm="128G", models=True, used="0"):
+def _in_container(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 97887", shm="128G", models=True, used="0", banner="CUDA Version: 13.2"):
     """preflight.sh --in-container on a fake rented machine: no docker at all, fake GPU/RAM/disk tools and image layout."""
     import os, stat
     env, _ = _fake_host(tmp, gpu=gpu)
@@ -298,7 +298,7 @@ def _in_container(tmp, gpu="NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 9
     tool("nvidia-smi", f'''case "$*" in
   *name,memory.total*) printf '%s\\n' "{gpu}" "{gpu}";;
   *memory.used*) printf '%s\\n' {used} 0;;
-  *) echo "| NVIDIA-SMI 595.00   Driver Version: 595.00   CUDA Version: 13.2 |";; esac\n''')
+  *) echo "| NVIDIA-SMI 595.00   Driver Version: 595.00   {banner} |";; esac\n''')
     stack = Path(tmp) / "opt/stack"; stack.mkdir(parents=True)
     (stack / "up.sh").write_text("")
     (stack / "fetch_models.py").write_text("import sys; sys.exit(%d)\n" % (0 if models else 1))
@@ -322,6 +322,15 @@ def test_preflight_in_container_rejects_wrong_gpus_busy_gpus_small_shm_and_missi
         with tempfile.TemporaryDirectory() as tmp:
             out = _in_container(tmp, **kw)
             assert out.returncode == 1 and needle in out.stdout and "PREFLIGHT FAILED" in out.stdout, (kw, out.stdout)
+
+
+def test_preflight_reads_the_cuda_version_of_old_and_new_driver_banners():
+    import tempfile
+    for banner, ok in (("CUDA Version: 13.2", True), ("CUDA UMD Version: 13.3", True), ("CUDA UMD Version: 12.9", False), ("CUDA Version: 12.8", False)):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = _in_container(tmp, banner=banner)
+            assert (out.returncode == 0) == ok, (banner, out.stdout)
+            assert ("supports CUDA 13" in out.stdout) == ok
 
 
 def test_vast_key_is_gated_by_the_machine_check():
