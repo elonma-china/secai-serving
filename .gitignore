@@ -28,3 +28,7 @@ Thumbs.db
 
 # Misc cache
 .cache/
+
+# Local API key used by the Vast.ai runbook
+api.key
+docker/api.key
