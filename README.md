@@ -76,6 +76,72 @@ Without Docker: `MODEL_DIR=/workspace/models python3 stack/fetch_models.py && MO
 Compile caches can also be shared without the image through `stack/cache_bundle.py` (private HF repo). Not covered: one
 host is a single point of failure, and the API key is the only access control (no TLS) - keep the ports off the internet.
 
+## Hướng dẫn chạy trên Vast.ai (tiếng Việt, đã chạy thật 2026-11-23)
+
+Mọi lệnh dưới đây chạy từ thư mục `docker/` và đã kiểm trên máy thuê thật. Cần `vastai` đã đăng nhập và đủ credit
+(`vastai show user`). Máy 2x RTX PRO 6000 giá khoảng 3,1 USD/giờ: **xong việc phải `destroy`**.
+
+**1. Tìm và kiểm offer (miễn phí)**
+```bash
+./vast.sh offers                    # cột đầu là ID offer, rẻ nhất lên trên
+./vast.sh check-offer 61282662      # phải in "OFFER OK" (GPU, CUDA, RAM, đĩa, mạng, độ tin cậy)
+```
+Nên chọn offer có CPU AVX-512 (AMD EPYC 9xxx); CPU khác vẫn chạy nhưng boot chậm thêm ~30 giây.
+
+**2. Thuê (mất tiền) rồi chờ `running`**
+```bash
+./vast.sh create 61282662 --yes     # in "Started. {... 'new_contract': 62088958}" -> 62088958 là ID instance
+vastai show instance 62088958 --raw | python3 -c 'import json,sys; print(json.load(sys.stdin)["actual_status"])'
+```
+Chạy `create` **một lần**; nếu lỗi, kiểm `vastai show instances` trước khi thử lại. Trạng thái `loading` (kéo image 36 GB) mất vài phút.
+
+**3. Kiểm máy, cài key, chờ boot**
+```bash
+./vast.sh check 62088958            # phải in "PREFLIGHT OK"
+./vast.sh key 62088958 api.key      # api.key = file chứa đúng key (mode 600); tự chạy lại check rồi mới cài key
+ssh -p <ssh_port> root@<ssh_host> tail -f /workspace/logs/boot.log   # lệnh in ra ở bước trên; xong khi thấy "stack up in ~150s"
+```
+
+**4. Kiểm 5 model bằng smoke chính thức** (một request thật cho mỗi model)
+```bash
+ssh -p <ssh_port> root@<ssh_host> 'cd /opt/secai/stack && python3 smoke.py'   # kết quả cuối: READY
+```
+
+**5. Lấy URL công khai và thử từng dịch vụ**
+```bash
+./vast.sh ports 62088958
+# LLM (nginx)  http://<ip>:45419   embedding :44782   rerank :44044   translate :44073   OCR :44409
+curl -s -H "Authorization: Bearer $(cat api.key)" http://<ip>:45419/v1/models      # -> secai1999/LLM-Autoscan-v1
+curl -s -H "Authorization: Bearer $(cat api.key)" -H 'Content-Type: application/json' \
+  http://<ip>:45419/v1/chat/completions \
+  -d '{"model":"secai1999/LLM-Autoscan-v1","messages":[{"role":"user","content":"Say OK"}],"max_tokens":32}'
+```
+Tên model phải đúng: `secai1999/LLM-Autoscan-v1`, `secai1999/Embedding-Autoscan-v1`, `secai1999/Rerank-Autoscan-v1`
+(sai tên -> 404). Cổng OCR công khai chỉ có trong image build **sau** PR #9; image `2fe2825-20261120-warm` giữ OCR ở loopback,
+nên `ports` vẫn liệt kê nhưng không kết nối được. Dùng tunnel:
+```bash
+./vast.sh tunnel 62088958 &         # 38005 LLM, 38000 embed, 38002 rerank, 38004 translate, 38083 OCR (chỉ localhost)
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $(cat api.key)" http://127.0.0.1:38083/health   # 200
+```
+
+**6. Trỏ gateway (`secai-docker/.env`) sang máy mới**
+```bash
+cp -p .env .env.bak-$(date +%Y%m%d)                       # luôn sao lưu trước
+sed -i -E 's#^QWEN_BASE_URL=.*#QWEN_BASE_URL=http://<ip>:45419/v1#; s#^EMBEDDING_API_URL=.*#EMBEDDING_API_URL=http://<ip>:44782#; s#^RERANKER_API_URL=.*#RERANKER_API_URL=http://<ip>:44044#' .env
+docker compose up -d --no-deps --no-build gateway
+docker compose config --services | grep -E '^pentestcode' | xargs docker compose up -d --no-deps --no-build   # pentestcode đọc QWEN_BASE_URL
+curl -s http://127.0.0.1:8131/health   # llm/qwen/embedding/reranker = true
+```
+Embedding/rerank **không** có `/v1` ở cuối URL; LLM thì có. Dùng `xargs` (không dùng `$(...)` trần) vì zsh không tách từ.
+`/health` có thể vẫn `degraded` vì lý do khác (ví dụ `kb_sync`); xem trường `problems`. Dịch/OCR của gateway dùng cấu hình
+riêng (loopback 18868/18083), không đổi bằng ba biến trên.
+
+**7. Dừng tính tiền / quay lại**
+```bash
+./vast.sh destroy 62088958 --yes    # mất toàn bộ dữ liệu trên máy
+cp -p .env.bak-<ngày> .env && docker compose up -d --no-deps --no-build gateway   # quay lại endpoint cũ (rồi pentestcode như bước 6)
+```
+
 ## What is optimized
 
 - **KV offload**: GPU -> pinned RAM (55 GiB/replica) -> NVMe (`TieringOffloadingSpec`, trimmed to 80 GiB/replica by `kv_gc.sh`).
